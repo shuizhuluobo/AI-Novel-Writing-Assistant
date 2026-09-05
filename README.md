@@ -423,17 +423,17 @@ Copy-Item server/.env.example server/.env
 
 大多数本地开发场景，其实不需要单独创建前端 env。
 
-因为前端开发模式下默认会把 API 指到：
+因为前端开发模式下默认会通过 Vite 代理把 API 指到后端：
 
 ```text
-http(s)://当前页面 hostname:3000/api
+http(s)://当前页面 hostname:39001/api
 ```
 
 这也包括“同一台机器启动服务，然后用局域网 IP 在别的设备上访问”的场景。
-例如页面开在 `http://192.168.0.37:5173`，前端默认会自动把 API 指到：
+例如页面开在 `http://192.168.0.37:39002`，前端默认会自动把 API 指到：
 
 ```text
-http://192.168.0.37:3000/api
+http://192.168.0.37:39001/api
 ```
 
 只有在这些场景下，才建议创建 `client/.env`：
@@ -442,7 +442,7 @@ http://192.168.0.37:3000/api
 - 你想把前端显式指向别的 API 地址
 - 你需要固定 `VITE_API_BASE_URL`
 
-如果你已经复制了 `client/.env.example`，又发现浏览器请求都跑到了 `http://localhost:3000/api`，通常就是因为你把 API 显式固定死了。对同机 / 局域网访问，建议直接删除或注释掉 `VITE_API_BASE_URL`。
+如果你已经复制了 `client/.env.example`，又发现浏览器请求都跑到了 `http://localhost:39001/api`，通常就是因为你把 API 显式固定死了。对同机 / 局域网访问，建议直接删除或注释掉 `VITE_API_BASE_URL`。
 
 示例：
 
@@ -458,7 +458,7 @@ Copy-Item client/.env.example client/.env
 
 ```env
 # 同机 / 局域网访问时，通常不需要这一行
-# VITE_API_BASE_URL=http://localhost:3000/api
+# VITE_API_BASE_URL=http://localhost:39001/api
 ```
 
 #### 2.3 模型供应商并不一定要写死在 env
@@ -486,22 +486,114 @@ pnpm dev
 如果你已经复制好了 `server/.env` 和 `client/.env`，默认就是直接运行这一条。
 不需要在首次启动前手动再执行 `prisma generate`、`prisma db push` 或 `pnpm db:migrate`。
 
+更省事的方式是用根目录的 `dev.sh`：它会先结束占用默认端口的旧进程，再启动前后端，不会因为"端口被上一个进程占着"而启动失败。
+
+```bash
+./dev.sh                # 后端 39001 + 前端 39002，带热重载
+./dev.sh --only api     # 只启动后端
+./dev.sh --only web     # 只启动前端
+./dev.sh --prod         # 用构建产物启动
+./dev.sh --no-kill      # 端口被占用时直接退出，不结束进程
+./dev.sh --help         # 查看全部参数
+```
+
+`Ctrl + C` 会同时停掉前后端；日志在 `.tmp/dev-logs/`。
+
 默认情况下：
 
-- 前端：`http://localhost:5173`
-- 后端：`http://localhost:3000`
-- API：`http://localhost:3000/api`
+- 前端：`http://localhost:39002`
+- 后端：`http://localhost:39001`
+- API：`http://localhost:39001/api`
+
+默认端口刻意避开了 `3000` / `5173` 这类常见开发端口，减少和本机其它服务抢端口的情况。
+想要改回去，设置 `PORT`（后端）和 `CLIENT_PORT`（前端）即可。
 
 首次启动服务端时，会自动执行 Prisma generate 和 `db push`。
 只有在你自己修改了 Prisma schema，或者要处理正式迁移流程时，才需要手动使用 Prisma / 数据库相关命令。
 
 建议第一次启动后先做这几步：
 
-1. 打开 `http://localhost:5173/settings`，至少配置一组可用的模型供应商 API Key
-2. 打开 `http://localhost:5173/settings/model-routes`，检查各任务实际使用的模型路由
-3. 如果要启用知识库，打开 `http://localhost:5173/knowledge?tab=settings`，保存 Embedding / Collection 设置
+1. 打开 `http://localhost:39002/settings`，至少配置一组可用的模型供应商 API Key
+2. 打开 `http://localhost:39002/settings/model-routes`，检查各任务实际使用的模型路由
+3. 如果要启用知识库，打开 `http://localhost:39002/knowledge?tab=settings`，保存 Embedding / Collection 设置
 
-### 4. 如果你使用 Qdrant Cloud
+### 3.1 用构建产物部署（非 dev 模式）
+
+```bash
+pnpm install
+pnpm --filter @ai-novel/server prisma:generate   # 生成 Prisma Client
+pnpm build                                       # shared + server + client
+pnpm start:db                                    # 首次部署或改过 schema 后建表（SQLite 用 prisma db push）
+pnpm start:api                                   # 后端 http://localhost:39001
+pnpm start:web                                   # 前端 http://localhost:39002
+```
+
+前端预览服务会把 `/api` 反向代理到后端，所以生产构建里不需要写死 `VITE_API_BASE_URL`。
+后端默认监听 `HOST=0.0.0.0`（`server/.env` 里的 `ALLOW_LAN=true`），局域网内用机器 IP 访问 `39002` 端口即可。
+
+### 3.2 后续更新代码（不会丢本地端口改动）
+
+```bash
+pnpm deploy:update
+```
+
+脚本会按顺序完成这些事，任何一步失败都会停在当前步骤并打印回滚方式：
+
+1. 本地未提交改动先 `git stash` 暂存（端口改动也在里面），只暂存已跟踪文件，不动你的临时文件。
+2. `git pull --rebase`；冲突时自动 `git rebase --abort` 并恢复现场，不会继续碰数据库。
+3. 恢复本地改动，然后做**端口守卫**：检查 9 处端口配置，被上游改回 `3000` / `5173` 会自动改回 `39001` / `39002`。
+4. `pnpm-lock.yaml` 有变化才执行 `pnpm install`。
+5. 备份 SQLite 到 `server/tmp/db-backups/`，并校验备份文件大小。
+6. 构建 shared / server / client；只有 Prisma schema 变化时才执行 `prisma db push`。
+7. 重启两个服务，并等待健康检查通过。
+
+其它常用命令：
+
+```bash
+pnpm deploy:status    # 分支 / 端口 / 服务 / 数据库 / 最近备份
+pnpm deploy:ports     # 只检查并修复端口
+pnpm deploy:start     # 启动后端 + 前端
+pnpm deploy:stop      # 停止后端 + 前端
+pnpm deploy:restart   # 重启后端 + 前端
+```
+
+可选参数：`--skip-install`、`--skip-build`、`--no-fix-ports`（只报告不修复）、`--branch <name>`。
+日志在 `.tmp/deploy-logs/`。
+
+更省心的做法：把端口改动提交成本地 commit（或单独分支），这样 rebase 时 git 会自己处理，脚本的端口守卫只作为兜底。
+
+### 4. Qdrant / 知识库（可选，不是启动必需）
+
+Qdrant 只服务**知识库向量检索**。开书、自动导演、故事规划、角色准备、写法引擎、章节生成和整本生产主链都不依赖它，默认配置里已经关掉：
+
+```env
+RAG_ENABLED=false
+```
+
+#### 4.1 不用 Docker 跑 Qdrant
+
+本项目不需要容器也能跑 Qdrant。在 Linux 上直接用官方静态二进制即可：
+
+```bash
+# 到 https://github.com/qdrant/qdrant/releases 下载对应版本的
+# qdrant-x86_64-unknown-linux-gnu.tar.gz，解压后：
+./qdrant   # 默认监听 6333(REST) / 6334(gRPC)，数据落在 ./storage
+```
+
+然后写入 `server/.env` 并重启后端：
+
+```env
+RAG_ENABLED=true
+QDRANT_URL=http://127.0.0.1:6333
+```
+
+```bash
+pnpm deploy:restart
+```
+
+最后到 `知识库 -> 向量设置` 保存 Embedding provider / model 和集合设置。
+
+#### 4.2 如果你使用 Qdrant Cloud
 
 如果你只是先体验主流程，其实可以先跳过 Qdrant，直接在 `server/.env` 里设：
 

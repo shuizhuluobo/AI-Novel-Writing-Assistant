@@ -8,7 +8,7 @@
 pnpm --filter @ai-novel/site dev
 ```
 
-默认监听 `http://localhost:4173`（与主项目 client 的 3000 端口隔开，避免和其它 vite 项目默认的 5173 端口冲突）。
+默认监听 `http://localhost:4173`（与主项目前端默认的 39002 端口隔开，避免和其它 vite 项目默认的 5173 端口冲突）。
 
 ## 构建
 

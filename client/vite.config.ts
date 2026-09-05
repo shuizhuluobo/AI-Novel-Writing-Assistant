@@ -38,13 +38,22 @@ function clearStaleOptimizeCache(rootDir: string): void {
   console.info("[vite] Cleared stale optimize cache because cached dependency sources no longer exist.");
 }
 
-function resolveDevProxyTarget(): string {
+// 默认端口刻意避开 3000 / 5173 这类常见开发端口：后端 API 39001，前端 39002。
+const DEFAULT_SERVER_PORT = 39001;
+const DEFAULT_CLIENT_PORT = 39002;
+
+function resolveApiProxyTarget(): string {
   const configuredHost = process.env.HOST?.trim();
-  const port = Number(process.env.PORT ?? 3000);
+  const port = Number(process.env.PORT ?? DEFAULT_SERVER_PORT);
   const targetHost = configuredHost && !["0.0.0.0", "::"].includes(configuredHost)
     ? configuredHost
     : "127.0.0.1";
   return `http://${targetHost}:${port}`;
+}
+
+function resolveClientPort(): number {
+  const parsed = Number(process.env.CLIENT_PORT ?? DEFAULT_CLIENT_PORT);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_CLIENT_PORT;
 }
 
 function resolveDesktopAppVersion(): string {
@@ -95,10 +104,25 @@ export default defineConfig({
   },
   server: {
     host: true,
+    port: resolveClientPort(),
+    strictPort: true,
     proxy: {
       "/api": {
-        target: resolveDevProxyTarget(),
+        target: resolveApiProxyTarget(),
         changeOrigin: true,
+      },
+    },
+  },
+  preview: {
+    // 部署 / 预览态同样把 /api 代理到后端，前端产物就不需要写死后端地址。
+    host: true,
+    port: resolveClientPort(),
+    strictPort: true,
+    proxy: {
+      "/api": {
+        target: resolveApiProxyTarget(),
+        changeOrigin: true,
+        ws: true,
       },
     },
   },

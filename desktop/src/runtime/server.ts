@@ -44,7 +44,7 @@ function resolveConfiguredPort(): number | undefined {
 }
 
 function resolveExternalServerPort(): number {
-  return resolveConfiguredPort() ?? 3000;
+  return resolveConfiguredPort() ?? 39001;
 }
 
 async function resolveManagedServerPort(): Promise<number> {

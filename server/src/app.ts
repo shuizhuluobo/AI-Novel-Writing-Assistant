@@ -216,6 +216,9 @@ interface BackgroundServicesHandle {
   stop: () => Promise<void>;
 }
 
+// 默认端口刻意避开 3000 / 5173 这类常见开发端口，减少与本机其它服务冲突。
+const DEFAULT_SERVER_PORT = 39001;
+
 function resolveServerStartOptions(options?: ServerStartOptions): {
   host: string;
   port: number;
@@ -224,7 +227,7 @@ function resolveServerStartOptions(options?: ServerStartOptions): {
   const allowLan = options?.allowLan ?? parseEnvFlag(process.env.ALLOW_LAN, process.env.NODE_ENV !== "production");
   return {
     allowLan,
-    port: options?.port ?? Number(process.env.PORT ?? 3000),
+    port: options?.port ?? Number(process.env.PORT ?? DEFAULT_SERVER_PORT),
     host: options?.host ?? process.env.HOST ?? (allowLan ? "0.0.0.0" : "localhost"),
   };
 }

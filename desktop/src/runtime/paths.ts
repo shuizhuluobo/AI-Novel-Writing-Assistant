@@ -88,7 +88,7 @@ export function resolveDesktopRuntimeConfig(options: {
 }
 
 export function resolveRendererDevUrl(): string {
-  return process.env.AI_NOVEL_DESKTOP_RENDERER_URL?.trim() || "http://127.0.0.1:5173";
+  return process.env.AI_NOVEL_DESKTOP_RENDERER_URL?.trim() || "http://127.0.0.1:39002";
 }
 
 export function resolveDesktopResourcesDir(): string {

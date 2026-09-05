@@ -13,7 +13,7 @@ const webLocation = {
 const lanDevLocation = {
   protocol: "http:",
   hostname: "192.168.1.88",
-  origin: "http://192.168.1.88:5173",
+  origin: "http://192.168.1.88:39002",
 };
 
 test("production web without configured API base uses same-origin API path", () => {
@@ -75,9 +75,9 @@ test("development loopback API base adapts to the page host for LAN testing", ()
   assert.equal(
     resolveApiBaseUrlForEnvironment({
       runtimeConfig: { mode: "web" },
-      viteEnv: { ...developmentEnv, VITE_API_BASE_URL: "http://localhost:3000/api" },
+      viteEnv: { ...developmentEnv, VITE_API_BASE_URL: "http://localhost:39001/api" },
       windowLocation: lanDevLocation,
     }),
-    "http://192.168.1.88:3000/api",
+    "http://192.168.1.88:39001/api",
   );
 });

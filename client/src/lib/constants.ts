@@ -1,4 +1,6 @@
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+// 默认后端端口刻意避开 3000 这类常见开发端口，前端默认是 39002。
+const DEFAULT_SERVER_PORT = 39001;
 type AppRuntimeMode = "web" | "desktop";
 type ViteRuntimeEnv = Partial<ImportMetaEnv> & {
   DEV?: boolean;
@@ -66,21 +68,21 @@ export function resolveApiBaseUrlForEnvironment({
   const configuredBaseUrl = config.apiBaseUrl?.trim() || env.VITE_API_BASE_URL?.trim();
   const appRuntime = resolveAppRuntime(config);
   if (!windowLocation) {
-    return configuredBaseUrl || "http://localhost:3000/api";
+    return configuredBaseUrl || `http://localhost:${DEFAULT_SERVER_PORT}/api`;
   }
 
   if (!env.DEV) {
     if (configuredBaseUrl) {
       return configuredBaseUrl;
     }
-    return appRuntime === "desktop" ? "http://localhost:3000/api" : "/api";
+    return appRuntime === "desktop" ? `http://localhost:${DEFAULT_SERVER_PORT}/api` : "/api";
   }
 
   if (appRuntime === "web" && !configuredBaseUrl) {
     return "/api";
   }
 
-  const inferredBaseUrl = `${windowLocation.protocol}//${windowLocation.hostname}:3000/api`;
+  const inferredBaseUrl = `${windowLocation.protocol}//${windowLocation.hostname}:${DEFAULT_SERVER_PORT}/api`;
   if (!configuredBaseUrl) {
     return inferredBaseUrl;
   }
@@ -92,7 +94,7 @@ export function resolveApiBaseUrlForEnvironment({
     }
     parsed.hostname = windowLocation.hostname;
     if (!parsed.port) {
-      parsed.port = "3000";
+      parsed.port = String(DEFAULT_SERVER_PORT);
     }
     return trimTrailingSlash(parsed.toString());
   } catch {
