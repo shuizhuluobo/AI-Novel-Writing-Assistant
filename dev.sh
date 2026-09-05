@@ -92,6 +92,10 @@ CLIENT_PORT="${CLIENT_PORT:-}"
 export PORT="$SERVER_PORT"
 export CLIENT_PORT="$CLIENT_PORT"
 
+# Qdrant 端口（章节生成上下文检索用，仅 RAG 启用时需要）
+QDRANT_PORT="${QDRANT_PORT:-6333}"
+export QDRANT_PORT
+
 # ---------------------------------------------------------------------------
 # 端口占用处理
 # ---------------------------------------------------------------------------
@@ -205,6 +209,15 @@ start_web() {
   ok "前端已就绪：http://localhost:${CLIENT_PORT}"
 }
 
+ensure_qdrant() {
+  if [[ "$TARGET" != "all" && "$TARGET" != "api" ]]; then
+    return 0
+  fi
+  log "检查 Qdrant（章节生成上下文检索用）..."
+  node "$REPO_ROOT/scripts/qdrant.cjs" ensure 2>&1 | sed 's/^/[qdrant] /' || \
+    warn "Qdrant 启动失败：章节生成会缺少检索上下文（可在 server/.env 设 RAG_ENABLED=false 关闭）。"
+}
+
 cleanup() {
   trap - INT TERM EXIT
 
@@ -216,7 +229,11 @@ cleanup() {
   done
 
   # 兜底：确保端口上没有残留进程
-  for port in "$SERVER_PORT" "$CLIENT_PORT"; do
+  local ports=("$SERVER_PORT" "$CLIENT_PORT")
+  if [[ "$TARGET" == "all" || "$TARGET" == "api" ]]; then
+    ports+=("$QDRANT_PORT")
+  fi
+  for port in "${ports[@]}"; do
     local pids
     pids="$(port_pids "$port")"
     if [[ -n "${pids// /}" ]]; then
@@ -246,6 +263,8 @@ fi
 if [[ "$TARGET" == "all" || "$TARGET" == "web" ]]; then
   kill_port "$CLIENT_PORT"
 fi
+
+ensure_qdrant
 
 log "构建 shared 包（前后端共用类型与协议）..."
 pnpm --filter @ai-novel/shared build || die "shared 构建失败。"

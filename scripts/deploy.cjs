@@ -332,7 +332,21 @@ async function startService({ name, args, port, healthUrl, env }) {
   log(`${name} 已就绪：端口 ${port}`);
 }
 
+function ensureQdrant() {
+  // RAG 启用时确保本地 Qdrant 在跑；失败不阻塞主流程（检索降级为空）。
+  const result = spawnSync("node", ["scripts/qdrant.cjs", "ensure"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+    env: process.env,
+  });
+  if (result.status !== 0) {
+    warn("Qdrant 启动失败（章节生成会缺少检索上下文），可忽略或检查 .tmp/qdrant/qdrant.log。");
+  }
+}
+
 async function startAll() {
+  ensureQdrant();
+
   if (isPortListening(SERVER_PORT)) {
     log(`后端已在运行（端口 ${SERVER_PORT}）`);
   } else {

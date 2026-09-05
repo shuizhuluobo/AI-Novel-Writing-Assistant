@@ -562,25 +562,25 @@ pnpm deploy:restart   # 重启后端 + 前端
 
 更省心的做法：把端口改动提交成本地 commit（或单独分支），这样 rebase 时 git 会自己处理，脚本的端口守卫只作为兜底。
 
-### 4. Qdrant / 知识库（可选，不是启动必需）
+### 4. Qdrant / 知识库（可选，但能提升生成质量）
 
-Qdrant 只服务**知识库向量检索**。开书、自动导演、故事规划、角色准备、写法引擎、章节生成和整本生产主链都不依赖它，默认配置里已经关掉：
+Qdrant 提供**向量检索**。章节生成（`GenerationContextAssembler`）会把检索到的已写章节、世界观、知识库文档等上下文注入提示词，对长篇一致性和「资料复用」有帮助；但它不参与开书、自动导演、故事/角色/写法规划这些主链本身。
 
-```env
-RAG_ENABLED=false
-```
+#### 4.1 不用 Docker 跑 Qdrant（推荐）
 
-#### 4.1 不用 Docker 跑 Qdrant
-
-本项目不需要容器也能跑 Qdrant。在 Linux 上直接用官方静态二进制即可：
+仓库自带 `scripts/qdrant.cjs`，自动下载官方静态二进制并后台运行，无需 Docker / WSL：
 
 ```bash
-# 到 https://github.com/qdrant/qdrant/releases 下载对应版本的
-# qdrant-x86_64-unknown-linux-gnu.tar.gz，解压后：
-./qdrant   # 默认监听 6333(REST) / 6334(gRPC)，数据落在 ./storage
+node scripts/qdrant.cjs status    # 查看状态
+node scripts/qdrant.cjs ensure     # 未运行就下载并启动；已运行则跳过
+node scripts/qdrant.cjs stop       # 停止
 ```
 
-然后写入 `server/.env` 并重启后端：
+- 二进制默认版本 `1.9.1`（兼容 glibc 2.35，Ubuntu 22.04 可用）；需要其他版本用 `QDRANT_VERSION=1.13.4`。
+- 二进制与数据放在 `.tmp/qdrant/`（已被 gitignore），日志 `.tmp/qdrant/qdrant.log`。
+- `./dev.sh` 和 `pnpm deploy:*` 在 `RAG_ENABLED` 非 false 时会自动 `ensure`，确保 Qdrant 在跑。
+
+在 `server/.env` 启用并重启后端：
 
 ```env
 RAG_ENABLED=true
@@ -591,7 +591,7 @@ QDRANT_URL=http://127.0.0.1:6333
 pnpm deploy:restart
 ```
 
-最后到 `知识库 -> 向量设置` 保存 Embedding provider / model 和集合设置。
+检索要能建索引，需要一个支持 Embedding 的模型 Key。到 `知识库 -> 向量设置` 保存 Embedding provider / model（若用 OpenAI 兼容的自定义渠道，也在该面板选择对应 provider）；未配置时向量任务会失败、检索降级为空，不影响主链。
 
 #### 4.2 如果你使用 Qdrant Cloud
 
