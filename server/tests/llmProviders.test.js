@@ -29,14 +29,14 @@ const {
   selectStructuredOutputStrategy,
 } = require("../dist/llm/structuredOutput.js");
 
-test("supported providers include kimi, minimax, glm, qwen, gemini and ollama", () => {
-  for (const provider of ["kimi", "minimax", "glm", "qwen", "gemini", "ollama"]) {
+test("supported providers include kimi, minimax, glm, qwen, gemini, ollama, openrouter and bailian", () => {
+  for (const provider of ["kimi", "minimax", "glm", "qwen", "gemini", "ollama", "openrouter", "bailian"]) {
     assert.ok(SUPPORTED_PROVIDERS.includes(provider), `${provider} should be available`);
   }
 });
 
 test("new provider defaults are present in their model fallback lists", () => {
-  for (const provider of ["kimi", "minimax", "glm", "qwen", "gemini", "ollama"]) {
+  for (const provider of ["kimi", "minimax", "glm", "qwen", "gemini", "ollama", "openrouter", "bailian"]) {
     assert.ok(
       PROVIDERS[provider].models.includes(PROVIDERS[provider].defaultModel),
       `${provider} default model should exist in fallback models`,
@@ -65,6 +65,66 @@ test("kimi k2 models force temperature 1 while moonshot models keep requested te
 test("ollama does not advertise forced json mode", () => {
   const capability = getJsonCapability("ollama", "llama3.2");
   assert.equal(capability.supportsJsonObject, false);
+  assert.equal(capability.supportsJsonSchema, false);
+});
+
+test("openrouter uses prompt_json for structured output", () => {
+  const profile = resolveStructuredOutputProfile({
+    provider: "openrouter",
+    model: "openai/gpt-5",
+    baseURL: "https://openrouter.ai/api/v1",
+    executionMode: "structured",
+  });
+  assert.equal(profile.family, "openrouter");
+  assert.equal(profile.preferredStructuredStrategy, "prompt_json");
+  assert.equal(profile.nativeJsonObject, false);
+  assert.equal(profile.nativeJsonSchema, false);
+});
+
+test("openrouter does not advertise forced json mode", () => {
+  const capability = getJsonCapability("openrouter", "openai/gpt-5");
+  assert.equal(capability.supportsJsonObject, false);
+  assert.equal(capability.supportsJsonSchema, false);
+});
+
+test("bailian shares the dashscope qwen structured profile", () => {
+  const profile = resolveStructuredOutputProfile({
+    provider: "bailian",
+    model: "qwen-plus",
+    baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    executionMode: "structured",
+  });
+  assert.equal(profile.family, "dashscope_qwen");
+  assert.equal(profile.preferredStructuredStrategy, "json_object");
+  assert.equal(profile.nativeJsonObject, true);
+  assert.equal(profile.nativeJsonSchema, false);
+});
+
+test("bailian disables thinking for structured qwen3 calls", () => {
+  const profile = resolveStructuredOutputProfile({
+    provider: "bailian",
+    model: "qwen3-max",
+    baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    executionMode: "structured",
+  });
+  assert.equal(profile.requiresNonThinkingForStructured, true);
+  assert.equal(profile.supportsReasoningToggle, true);
+});
+
+test("bailian falls back to prompt_json for non-qwen models", () => {
+  const profile = resolveStructuredOutputProfile({
+    provider: "bailian",
+    model: "deepseek-v3",
+    baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    executionMode: "structured",
+  });
+  assert.equal(profile.preferredStructuredStrategy, "prompt_json");
+  assert.equal(profile.requiresNonThinkingForStructured, false);
+});
+
+test("bailian advertises json object mode", () => {
+  const capability = getJsonCapability("bailian", "qwen-plus");
+  assert.equal(capability.supportsJsonObject, true);
   assert.equal(capability.supportsJsonSchema, false);
 });
 

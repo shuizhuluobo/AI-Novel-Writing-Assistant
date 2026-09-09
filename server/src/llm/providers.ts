@@ -140,6 +140,40 @@ export const PROVIDERS: Record<BuiltinLLMProvider, ProviderConfig> = {
     envModelKey: "OLLAMA_MODEL",
     requiresApiKey: false,
   },
+  openrouter: {
+    name: "OpenRouter",
+    baseURL: "https://openrouter.ai/api/v1",
+    defaultModel: "auto",
+    models: [
+      "auto",
+      "openai/gpt-5",
+      "anthropic/claude-sonnet-4-5",
+      "google/gemini-2.5-flash",
+      "deepseek/deepseek-v4-flash",
+      "meta-llama/llama-4-maverick",
+    ],
+    envKey: "OPENROUTER_API_KEY",
+    envBaseURLKey: "OPENROUTER_BASE_URL",
+    envModelKey: "OPENROUTER_MODEL",
+    maxTokens: 8192,
+  },
+  bailian: {
+    name: "阿里百炼",
+    baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    defaultModel: "qwen-plus",
+    models: [
+      "qwen-plus",
+      "qwen-max",
+      "qwen-turbo",
+      "qwen3-max",
+      "qwen3-235b-a22b",
+      "qwen3-32b",
+    ],
+    envKey: "DASHSCOPE_API_KEY",
+    envBaseURLKey: "BAILIAN_BASE_URL",
+    envModelKey: "BAILIAN_MODEL",
+    maxTokens: 8192,
+  },
 };
 
 export const SUPPORTED_PROVIDERS: BuiltinLLMProvider[] = [...LLM_PROVIDERS];

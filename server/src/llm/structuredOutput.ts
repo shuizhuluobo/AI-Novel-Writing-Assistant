@@ -44,6 +44,7 @@ const DEEPSEEK_HOST_PATTERN = /(?:^|\.)api\.deepseek\.com$/i;
 const GLM_HOST_PATTERN = /(?:^|\.)open\.bigmodel\.cn$/i;
 const GROK_HOST_PATTERN = /(?:^|\.)api\.x\.ai$/i;
 const MINIMAX_HOST_PATTERN = /(?:^|\.)api\.minimax(?:i)?\.(?:io|com)$/i;
+const OPENROUTER_HOST_PATTERN = /(?:^|\.)openrouter\.ai$/i;
 
 function normalizeText(value: string | undefined | null): string {
   return (value ?? "").trim().toLowerCase();
@@ -159,7 +160,8 @@ export function resolveStructuredOutputProfile(input: {
   const qwenMixedThinkingModel = isQwenMixedThinkingModel(model);
   const qwenThinkingOnlyModel = isQwenThinkingOnlyModel(model);
   const qwenNativeStructuredModel = supportsDashScopeQwenNativeStructuredOutput(model);
-  const isDashScopeQwen = usesOfficialEndpoint("qwen", DASHSCOPE_HOST_PATTERN);
+  const isDashScopeQwen = usesOfficialEndpoint("qwen", DASHSCOPE_HOST_PATTERN)
+    || usesOfficialEndpoint("bailian", DASHSCOPE_HOST_PATTERN);
   const isModelScopeQwen = MODELSCOPE_HOST_PATTERN.test(host) || provider.includes("modelscope");
 
   if (input.requestProtocol === "anthropic") {
@@ -272,6 +274,13 @@ export function resolveStructuredOutputProfile(input: {
   if (input.provider === "ollama") {
     return buildProfile({
       family: "ollama",
+      preferredStructuredStrategy: "prompt_json",
+      safeStructuredMaxTokens: 8192,
+    });
+  }
+  if (usesOfficialEndpoint("openrouter", OPENROUTER_HOST_PATTERN)) {
+    return buildProfile({
+      family: "openrouter",
       preferredStructuredStrategy: "prompt_json",
       safeStructuredMaxTokens: 8192,
     });
