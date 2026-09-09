@@ -12,7 +12,7 @@ import { z } from "zod";
 import { prisma } from "../db/prisma";
 import { setProviderSecretCache } from "../llm/factory";
 import { evictSharedLimiters } from "../llm/requestLimiter";
-import { filterHiddenModels, parseHiddenModels, refreshProviderModels, serializeHiddenModels } from "../llm/modelCatalog";
+import { filterHiddenModels, getProviderModels, parseHiddenModels, refreshProviderModels, serializeHiddenModels } from "../llm/modelCatalog";
 import { llmProviderSchema } from "../llm/providerSchema";
 import { isDeepSeekThinkingModeProvider, normalizeReasoningEffort } from "../llm/reasoning";
 import {
@@ -274,8 +274,7 @@ function buildBuiltInProviderStatus(
   };
 }
 
-function buildCustomProviderStatus(item: {
-  provider: string;
+async function buildCustomProviderStatus(item: {  provider: string;
   displayName: string | null;
   key: string | null;
   model: string | null;
@@ -287,12 +286,19 @@ function buildCustomProviderStatus(item: {
   hiddenModels?: string | null;
   concurrencyLimit?: number | null;
   requestIntervalMs?: number | null;
-}, imageModel: string | undefined): CustomProviderStatus {
+}, imageModel: string | undefined): Promise<CustomProviderStatus> {
   const currentModel = normalizeOptionalText(item.model) ?? "";
   const currentBaseURL = normalizeOptionalText(item.baseURL) ?? "";
   const currentAuthMode = normalizeProviderAuthMode(item.authMode);
   const hiddenModels = parseHiddenModels(item.hiddenModels);
-  const models = filterHiddenModels(currentModel ? [currentModel] : [], hiddenModels, currentModel);
+  const remoteModels = await getProviderModels(item.provider, {
+    apiKey: normalizeOptionalText(item.key) ?? undefined,
+    baseURL: currentBaseURL || undefined,
+    authMode: currentAuthMode,
+    fallbackModel: currentModel,
+    fallbackModels: [currentModel],
+  });
+  const models = filterHiddenModels(remoteModels, hiddenModels, currentModel);
   const supportsReasoningEffort = isDeepSeekThinkingModeProvider(item.provider, currentBaseURL, currentModel);
   return {
     provider: item.provider,
@@ -506,9 +512,9 @@ router.get("/api-keys", async (_req, res, next) => {
     const builtInProviders = SUPPORTED_PROVIDERS.map((provider) =>
       buildBuiltInProviderStatus(provider, keyMap.get(provider), imageModelMap.get(provider)),
     );
-    const customProviders = keys
+    const customProviders = await Promise.all(keys
       .filter((item) => !isBuiltInProvider(item.provider))
-      .map((item) => buildCustomProviderStatus(item, imageModelMap.get(item.provider)));
+      .map((item) => buildCustomProviderStatus(item, imageModelMap.get(item.provider))));
     const data = [...builtInProviders, ...customProviders];
     res.status(200).json({
       success: true,

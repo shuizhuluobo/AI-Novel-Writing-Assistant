@@ -674,6 +674,7 @@ test("GET and PUT /api/settings/llm-selection persist the top-level model choice
 
 test("GET /api/settings/api-keys exposes custom OpenAI-compatible providers", async () => {
   const originalFindMany = prisma.aPIKey.findMany;
+  const originalFetch = global.fetch;
   prisma.aPIKey.findMany = async () => ([
     {
       id: "api-key-custom",
@@ -690,12 +691,16 @@ test("GET /api/settings/api-keys exposes custom OpenAI-compatible providers", as
       updatedAt: new Date(),
     },
   ]);
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => ({ data: [{ id: "story-model" }, { id: "story-model-pro" }] }),
+  });
 
   const app = createApp();
   const server = http.createServer(app);
   const port = await listen(server);
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/api/settings/api-keys`);
+    const response = await originalFetch(`http://127.0.0.1:${port}/api/settings/api-keys`);
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.success, true);
@@ -711,8 +716,11 @@ test("GET /api/settings/api-keys exposes custom OpenAI-compatible providers", as
     assert.equal(custom.reasoningEnabled, true);
     assert.equal(custom.concurrencyLimit, 3);
     assert.equal(custom.requestIntervalMs, 5000);
+    assert.ok(custom.models.includes("story-model"));
+    assert.ok(custom.models.includes("story-model-pro"));
   } finally {
     prisma.aPIKey.findMany = originalFindMany;
+    global.fetch = originalFetch;
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 });
