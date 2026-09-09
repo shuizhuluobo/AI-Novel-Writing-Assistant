@@ -72,6 +72,7 @@ export async function executeAutoDirectorFollowUpAction(
   input: {
     actionCode: AutoDirectorMutationActionCode;
     idempotencyKey: string;
+    llmOverride?: { provider?: string; model?: string; temperature?: number };
   },
 ) {
   const { data } = await apiClient.post<ApiResponse<AutoDirectorActionExecutionResult>>(
@@ -85,10 +86,26 @@ export async function executeAutoDirectorFollowUpBatchAction(input: {
   actionCode: Extract<AutoDirectorMutationActionCode, "continue_auto_execution" | "retry_with_task_model">;
   taskIds: string[];
   batchRequestKey: string;
+  llmOverride?: { provider?: string; model?: string; temperature?: number };
 }) {
   const { data } = await apiClient.post<ApiResponse<AutoDirectorBatchActionExecutionResult>>(
     "/auto-director/follow-ups/batch-actions",
     input,
+  );
+  return data;
+}
+
+export async function archiveAutoDirectorFollowUp(directorTaskId: string) {
+  const { data } = await apiClient.post<ApiResponse<{ taskId: string; archived: boolean }>>(
+    `/auto-director/follow-ups/${directorTaskId}/archive`,
+    {},
+  );
+  return data;
+}
+
+export async function deleteAutoDirectorFollowUp(directorTaskId: string) {
+  const { data } = await apiClient.delete<ApiResponse<{ taskId: string; deleted: boolean }>>(
+    `/auto-director/follow-ups/${directorTaskId}`,
   );
   return data;
 }

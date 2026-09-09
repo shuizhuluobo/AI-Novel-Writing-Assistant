@@ -6,6 +6,7 @@ import {
 } from "@ai-novel/shared/types/autoDirectorFollowUp";
 import { authMiddleware } from "../middleware/auth";
 import { validate } from "../middleware/validate";
+import { llmProviderSchema } from "../llm/providerSchema";
 import { AutoDirectorFollowUpActionExecutor } from "../services/task/autoDirectorFollowUps/AutoDirectorFollowUpActionExecutor";
 import { AutoDirectorFollowUpService } from "../services/task/autoDirectorFollowUps/AutoDirectorFollowUpService";
 
@@ -36,6 +37,12 @@ const taskParamsSchema = z.object({
   taskId: z.string().trim().min(1),
 });
 
+const llmOverrideSchema = z.object({
+  provider: llmProviderSchema.optional(),
+  model: z.string().trim().min(1).optional(),
+  temperature: z.number().finite().min(0).max(2).optional(),
+}).optional();
+
 const singleActionBodySchema = z.object({
   actionCode: z.enum([
     "continue_auto_execution",
@@ -45,6 +52,7 @@ const singleActionBodySchema = z.object({
     "safe_fix_validation",
   ]),
   idempotencyKey: z.string().trim().min(1),
+  llmOverride: llmOverrideSchema,
 });
 
 const batchActionBodySchema = z.object({
@@ -54,6 +62,7 @@ const batchActionBodySchema = z.object({
   ]),
   taskIds: z.array(z.string().trim().min(1)).min(1),
   batchRequestKey: z.string().trim().min(1),
+  llmOverride: llmOverrideSchema,
 });
 
 function resolveOperatorId(): string {
@@ -84,6 +93,7 @@ router.post("/batch-actions", validate({ body: batchActionBodySchema }), async (
       source: "web",
       operatorId: resolveOperatorId(),
       batchRequestKey: body.batchRequestKey,
+      ...(body.llmOverride ? { llmOverride: body.llmOverride } : {}),
     });
     res.status(200).json({
       success: true,
@@ -166,11 +176,40 @@ router.post("/:taskId/actions", validate({ params: taskParamsSchema, body: singl
       source: "web",
       operatorId: resolveOperatorId(),
       idempotencyKey: body.idempotencyKey,
+      ...(body.llmOverride ? { llmOverride: body.llmOverride } : {}),
     });
     res.status(200).json({
       success: true,
       data,
       message: data.message,
+    } satisfies ApiResponse<typeof data>);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/:taskId/archive", validate({ params: taskParamsSchema }), async (req, res, next) => {
+  try {
+    const { taskId } = req.params as z.infer<typeof taskParamsSchema>;
+    const data = await followUpService.archiveFollowUp(taskId);
+    res.status(200).json({
+      success: true,
+      data,
+      message: "Follow-up archived.",
+    } satisfies ApiResponse<typeof data>);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete("/:taskId", validate({ params: taskParamsSchema }), async (req, res, next) => {
+  try {
+    const { taskId } = req.params as z.infer<typeof taskParamsSchema>;
+    const data = await followUpService.deleteFollowUp(taskId);
+    res.status(200).json({
+      success: true,
+      data,
+      message: "Follow-up deleted.",
     } satisfies ApiResponse<typeof data>);
   } catch (error) {
     next(error);

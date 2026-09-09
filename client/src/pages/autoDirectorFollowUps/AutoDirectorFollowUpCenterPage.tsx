@@ -18,6 +18,8 @@ import {
 import type { TaskStatus } from "@ai-novel/shared/types/task";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import {
+  archiveAutoDirectorFollowUp,
+  deleteAutoDirectorFollowUp,
   executeAutoDirectorFollowUpAction,
   executeAutoDirectorFollowUpBatchAction,
   getAutoDirectorFollowUpDetail,
@@ -26,6 +28,7 @@ import {
   revalidateAutoDirectorFollowUpDetail,
 } from "@/api/autoDirectorFollowUps";
 import { queryKeys } from "@/api/queryKeys";
+import { useLLMStore } from "@/store/llmStore";
 import { AutoDirectorFollowUpBatchBar } from "./components/AutoDirectorFollowUpBatchBar";
 import { AutoDirectorFollowUpDetailPanel } from "./components/AutoDirectorFollowUpDetail";
 import { AutoDirectorFollowUpListPanel } from "./components/AutoDirectorFollowUpList";
@@ -120,6 +123,9 @@ export default function AutoDirectorFollowUpCenterPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedDirectorTaskIds, setSelectedDirectorTaskIds] = useState<string[]>([]);
+  const llmProvider = useLLMStore((state) => state.provider);
+  const llmModel = useLLMStore((state) => state.model);
+  const llmTemperature = useLLMStore((state) => state.temperature);
 
   const selectedDirectorTaskId = searchParams.get("directorTaskId")?.trim() || searchParams.get("taskId")?.trim() || "";
   const section = parseEnumParam(searchParams.get("section"), AUTO_DIRECTOR_FOLLOW_UP_SECTIONS);
@@ -247,13 +253,49 @@ export default function AutoDirectorFollowUpCenterPage() {
     mutationFn: (input: {
       directorTaskId: string;
       actionCode: AutoDirectorMutationActionCode;
+      llmOverride?: { provider?: string; model?: string; temperature?: number } | null;
     }) => executeAutoDirectorFollowUpAction(input.directorTaskId, {
       actionCode: input.actionCode,
       idempotencyKey: buildIdempotencyKey(input.directorTaskId, input.actionCode),
+      ...(input.llmOverride ? { llmOverride: input.llmOverride } : {}),
     }),
     onSuccess: async (response) => {
       await invalidateFollowUps();
       toast.success(formatActionFeedbackMessage(response.message ?? "", "操作已提交"));
+    },
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: archiveAutoDirectorFollowUp,
+    onSuccess: async (_response, directorTaskId) => {
+      setSelectedDirectorTaskIds((current) => current.filter((id) => id !== directorTaskId));
+      if (selectedDirectorTaskId === directorTaskId) {
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("directorTaskId");
+          next.delete("taskId");
+          return next;
+        });
+      }
+      await invalidateFollowUps();
+      toast.success("已收起这条跟进，列表不再显示。");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteAutoDirectorFollowUp,
+    onSuccess: async (_response, directorTaskId) => {
+      setSelectedDirectorTaskIds((current) => current.filter((id) => id !== directorTaskId));
+      if (selectedDirectorTaskId === directorTaskId) {
+        setSearchParams((prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("directorTaskId");
+          next.delete("taskId");
+          return next;
+        });
+      }
+      await invalidateFollowUps();
+      toast.success("导演任务已彻底删除，运行记录已清除。");
     },
   });
 
@@ -340,7 +382,11 @@ export default function AutoDirectorFollowUpCenterPage() {
     });
   };
 
-  const handleExecuteAction = async (item: AutoDirectorFollowUpItem, action: AutoDirectorAction) => {
+  const handleExecuteAction = async (
+    item: AutoDirectorFollowUpItem,
+    action: AutoDirectorAction,
+    llmOverride?: { provider?: string; model?: string; temperature?: number } | null,
+  ) => {
     if (action.kind === "navigation") {
       const internalTarget = resolveInternalNavigationTarget(action.targetUrl);
       if (internalTarget) {
@@ -360,7 +406,25 @@ export default function AutoDirectorFollowUpCenterPage() {
     await actionMutation.mutateAsync({
       directorTaskId: item.directorTaskId,
       actionCode,
+      ...(llmOverride ? { llmOverride } : {}),
     });
+  };
+
+  const handleArchiveFollowUp = async (item: AutoDirectorFollowUpItem) => {
+    if (!window.confirm(`收起“${item.novelTitle}”的这条跟进？列表不再显示，小说与正文保留。`)) {
+      return;
+    }
+    await archiveMutation.mutateAsync(item.directorTaskId);
+  };
+
+  const handleDeleteFollowUp = async (item: AutoDirectorFollowUpItem) => {
+    if (!window.confirm(`彻底删除“${item.novelTitle}”的导演任务？运行记录会被清除，无法恢复。`)) {
+      return;
+    }
+    if (!window.confirm("再次确认：真的要彻底删除吗？小说与章节正文会保留，导演任务本身无法找回。")) {
+      return;
+    }
+    await deleteMutation.mutateAsync(item.directorTaskId);
   };
 
   const handleExecuteBatch = async () => {
@@ -514,10 +578,16 @@ export default function AutoDirectorFollowUpCenterPage() {
           loading={detailQuery.isLoading || revalidationMutation.isPending}
           errorMessage={detailErrorMessage}
           actionLoading={actionMutation.isPending || revalidationMutation.isPending}
+          managementLoading={archiveMutation.isPending || deleteMutation.isPending}
+          globalModel={llmProvider && llmModel
+            ? { provider: llmProvider, model: llmModel, temperature: llmTemperature }
+            : null}
           onExecuteAction={handleExecuteAction}
           onRefreshValidation={handleRefreshValidation}
           onSafeFix={handleSafeFix}
           onRetry={() => void detailQuery.refetch()}
+          onArchive={handleArchiveFollowUp}
+          onDelete={handleDeleteFollowUp}
         />
       </div>
 

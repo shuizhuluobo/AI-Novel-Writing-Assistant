@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type {
   AutoDirectorAction,
   AutoDirectorFollowUpDetail,
@@ -29,10 +30,25 @@ interface AutoDirectorFollowUpDetailPanelProps {
   loading: boolean;
   errorMessage?: string | null;
   actionLoading: boolean;
-  onExecuteAction: (item: AutoDirectorFollowUpItem, action: AutoDirectorAction) => void | Promise<void>;
+  managementLoading?: boolean;
+  globalModel?: { provider?: string; model?: string; temperature?: number } | null;
+  onExecuteAction: (
+    item: AutoDirectorFollowUpItem,
+    action: AutoDirectorAction,
+    llmOverride?: { provider?: string; model?: string; temperature?: number } | null,
+  ) => void | Promise<void>;
   onRefreshValidation: () => void | Promise<void>;
   onSafeFix: () => void | Promise<void>;
   onRetry: () => void | Promise<void>;
+  onArchive?: (item: AutoDirectorFollowUpItem) => void | Promise<void>;
+  onDelete?: (item: AutoDirectorFollowUpItem) => void | Promise<void>;
+}
+
+function supportsModelOverride(actionCode: string): boolean {
+  return actionCode === "continue_auto_execution"
+    || actionCode === "continue_generic"
+    || actionCode === "retry_with_task_model"
+    || actionCode === "retry_with_route_model";
 }
 
 export function AutoDirectorFollowUpDetailPanel({
@@ -41,11 +57,30 @@ export function AutoDirectorFollowUpDetailPanel({
   loading,
   errorMessage,
   actionLoading,
+  managementLoading = false,
+  globalModel = null,
   onExecuteAction,
   onRefreshValidation,
   onSafeFix,
   onRetry,
+  onArchive,
+  onDelete,
 }: AutoDirectorFollowUpDetailPanelProps) {
+  const [useGlobalModel, setUseGlobalModel] = useState(true);
+  const globalModelLabel = globalModel?.provider || globalModel?.model
+    ? `${globalModel?.provider ?? "未指定渠道"} / ${globalModel?.model ?? "未指定模型"}`
+    : null;
+  const globalModelAvailable = Boolean(globalModel?.provider && globalModel?.model);
+  const buildOverrideForAction = (action: AutoDirectorAction) => {
+    if (!useGlobalModel || !globalModelAvailable || !supportsModelOverride(action.code)) {
+      return null;
+    }
+    return {
+      provider: globalModel?.provider,
+      model: globalModel?.model,
+      temperature: globalModel?.temperature,
+    };
+  };
   const deliveryStatusLabels = {
     delivered: "已送达",
     pending: "投递中",
@@ -170,10 +205,25 @@ export function AutoDirectorFollowUpDetailPanel({
 
             <div className="space-y-2">
               <div className="text-sm font-medium">可执行动作</div>
+              {globalModelAvailable ? (
+                <label className={`flex cursor-pointer items-start gap-2 rounded-md bg-muted/40 p-2 text-xs text-muted-foreground ${AUTO_DIRECTOR_MOBILE_CLASSES.wrapText}`}>
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={useGlobalModel}
+                    onChange={(event) => setUseGlobalModel(event.target.checked)}
+                  />
+                  <span>
+                    使用当前全局模型继续或重试（{globalModelLabel ?? "未选择模型"}）。勾选后，继续与重试会先把任务模型切换到全局模型，适合原接口到限时换路继续。
+                  </span>
+                </label>
+              ) : null}
               {detail.availableActions.map((action) => (
                 <TaskQueueActionRow
                   key={action.code}
-                  title={action.label}
+                  title={action.kind === "mutation" && supportsModelOverride(action.code) && useGlobalModel && globalModelAvailable
+                    ? `${action.label}（用全局模型）`
+                    : action.label}
                   consequence={`${getFollowUpActionConsequence(action)} 风险：${getFollowUpActionRiskDescription(action)}`}
                   tone={getFollowUpActionTone(action)}
                   action={(
@@ -182,13 +232,40 @@ export function AutoDirectorFollowUpDetailPanel({
                       size="sm"
                       className={AUTO_DIRECTOR_MOBILE_CLASSES.fullWidthAction}
                       disabled={actionLoading}
-                      onClick={() => void onExecuteAction(selectedItem, action)}
+                      onClick={() => void onExecuteAction(selectedItem, action, buildOverrideForAction(action))}
                     >
                       {action.label}
                     </Button>
                   )}
                 />
               ))}
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-sm font-medium">清理测试任务</div>
+              <div className="text-xs text-muted-foreground">收起只隐藏跟进列表，彻底删除会清除导演任务与运行记录；小说与章节正文保留。</div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className={AUTO_DIRECTOR_MOBILE_CLASSES.fullWidthAction}
+                  disabled={actionLoading || managementLoading || !onArchive}
+                  onClick={() => void onArchive?.(selectedItem)}
+                >
+                  收起这条跟进
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className={AUTO_DIRECTOR_MOBILE_CLASSES.fullWidthAction}
+                  disabled={actionLoading || managementLoading || !onDelete}
+                  onClick={() => void onDelete?.(selectedItem)}
+                >
+                  彻底删除任务
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-2">

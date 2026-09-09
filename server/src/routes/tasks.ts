@@ -59,6 +59,11 @@ const autoDirectorFollowUpActionBodySchema = z.object({
     "retry_with_route_model",
   ]),
   idempotencyKey: z.string().trim().min(1),
+  llmOverride: z.object({
+    provider: llmProviderSchema.optional(),
+    model: z.string().trim().min(1).optional(),
+    temperature: z.number().finite().min(0).max(2).optional(),
+  }).optional(),
 });
 
 router.use(authMiddleware);
@@ -155,6 +160,7 @@ router.post("/auto-director-follow-ups/:taskId/actions", validate({
       source: "web",
       operatorId: "anonymous",
       idempotencyKey: body.idempotencyKey,
+      ...(body.llmOverride ? { llmOverride: body.llmOverride } : {}),
     });
     res.status(200).json({
       success: true,

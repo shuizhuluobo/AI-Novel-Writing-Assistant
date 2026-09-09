@@ -198,6 +198,12 @@ export interface AutoDirectorFollowUpListInput {
   pageSize?: number;
 }
 
+export interface AutoDirectorLlmOverride {
+  provider?: string;
+  model?: string;
+  temperature?: number;
+}
+
 export interface AutoDirectorActionRequest {
   directorTaskId?: string;
   /** @deprecated Use directorTaskId when the caller is auto-director-specific. */
@@ -207,6 +213,7 @@ export interface AutoDirectorActionRequest {
   operatorId: string;
   idempotencyKey: string;
   metadata?: Record<string, unknown>;
+  llmOverride?: AutoDirectorLlmOverride;
 }
 
 export const AUTO_DIRECTOR_ACTION_RESULT_CODES = [
@@ -236,6 +243,7 @@ export interface AutoDirectorBatchActionRequest {
   operatorId: string;
   batchRequestKey: string;
   metadata?: Record<string, unknown>;
+  llmOverride?: AutoDirectorLlmOverride;
 }
 
 export const AUTO_DIRECTOR_BATCH_RESULT_CODES = [

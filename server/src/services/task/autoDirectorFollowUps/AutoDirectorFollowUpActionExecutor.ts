@@ -7,6 +7,7 @@ import type {
 } from "@ai-novel/shared/types/autoDirectorFollowUp";
 import type { AutoDirectorFollowUpSection } from "@ai-novel/shared/types/autoDirectorValidation";
 import type { NovelWorkflowCheckpoint } from "@ai-novel/shared/types/novelWorkflow";
+import type { DirectorLLMOptions } from "@ai-novel/shared/types/novelDirector";
 import { prisma } from "../../../db/prisma";
 import { AppError } from "../../../middleware/errorHandler";
 import { resolveModel, type TaskType } from "../../../llm/modelRouter";
@@ -132,6 +133,23 @@ function mergeActionMetadata(
       ...patch,
     },
   };
+}
+
+function normalizeFollowUpLlmOverride(
+  raw: AutoDirectorActionRequest["llmOverride"],
+): Pick<DirectorLLMOptions, "provider" | "model" | "temperature"> | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+  const provider = typeof raw.provider === "string" && raw.provider.trim() ? raw.provider.trim() : undefined;
+  const model = typeof raw.model === "string" && raw.model.trim() ? raw.model.trim() : undefined;
+  const temperature = typeof raw.temperature === "number" && Number.isFinite(raw.temperature)
+    ? Math.min(2, Math.max(0, raw.temperature))
+    : undefined;
+  if (provider === undefined && model === undefined && temperature === undefined) {
+    return null;
+  }
+  return { provider, model, temperature };
 }
 
 function summarizeBatchResult(input: {
@@ -340,6 +358,7 @@ export class AutoDirectorFollowUpActionExecutor {
           batchAction: true,
           highMemoryStartedCount,
         },
+        ...(input.llmOverride ? { llmOverride: input.llmOverride } : {}),
       });
       itemResults.push(result);
       if (result.code === "executed") {
@@ -523,7 +542,11 @@ export class AutoDirectorFollowUpActionExecutor {
     const batchAlreadyStartedCount = typeof input.metadata?.highMemoryStartedCount === "number" && input.metadata.highMemoryStartedCount > 0
       ? input.metadata.highMemoryStartedCount
       : undefined;
+    const requestedOverride = normalizeFollowUpLlmOverride(input.llmOverride);
     if (input.actionCode === "continue_auto_execution") {
+      if (requestedOverride) {
+        await this.workflowService.applyAutoDirectorLlmOverride(input.taskId, requestedOverride);
+      }
       const continueInput: {
         continuationMode: "auto_execute_range" | "skip_quality_repair";
         batchAlreadyStartedCount?: number;
@@ -538,6 +561,9 @@ export class AutoDirectorFollowUpActionExecutor {
     }
 
     if (input.actionCode === "continue_generic") {
+      if (requestedOverride) {
+        await this.workflowService.applyAutoDirectorLlmOverride(input.taskId, requestedOverride);
+      }
       const continueInput: { batchAlreadyStartedCount?: number } = {};
       if (batchAlreadyStartedCount !== undefined) {
         continueInput.batchAlreadyStartedCount = batchAlreadyStartedCount;
@@ -549,12 +575,16 @@ export class AutoDirectorFollowUpActionExecutor {
     if (input.actionCode === "retry_with_task_model") {
       const retryInput: {
         id: string;
+        llmOverride?: Pick<DirectorLLMOptions, "provider" | "model" | "temperature">;
         resume: true;
         batchAlreadyStartedCount?: number;
       } = {
         id: input.taskId,
         resume: true,
       };
+      if (requestedOverride) {
+        retryInput.llmOverride = requestedOverride;
+      }
       if (batchAlreadyStartedCount !== undefined) {
         retryInput.batchAlreadyStartedCount = batchAlreadyStartedCount;
       }
@@ -569,7 +599,13 @@ export class AutoDirectorFollowUpActionExecutor {
       batchAlreadyStartedCount?: number;
     } = {
       id: input.taskId,
-      llmOverride: routeModel,
+      llmOverride: requestedOverride
+        ? {
+          provider: requestedOverride.provider ?? routeModel.provider,
+          model: requestedOverride.model ?? routeModel.model,
+          temperature: requestedOverride.temperature ?? routeModel.temperature,
+        }
+        : routeModel,
       resume: true,
     };
     if (batchAlreadyStartedCount !== undefined) {
@@ -623,7 +659,10 @@ export class AutoDirectorFollowUpActionExecutor {
           idempotencyKey: input.idempotencyKey,
           resultCode: result.code,
           failureReason: result.code === "failed" ? result.message : null,
-          metadataJson: input.metadata ? JSON.stringify(input.metadata) : null,
+          metadataJson: JSON.stringify({
+            ...input.metadata,
+            ...(input.llmOverride ? { llmOverride: input.llmOverride } : {}),
+          }),
           executedAt: new Date(),
         },
       });

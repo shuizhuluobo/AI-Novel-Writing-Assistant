@@ -10,9 +10,12 @@ import {
   AUTO_DIRECTOR_CHANNEL_TYPES,
 } from "@ai-novel/shared/types/autoDirectorFollowUp";
 import { prisma } from "../../../db/prisma";
+import { AppError } from "../../../middleware/errorHandler";
 import { NovelWorkflowService } from "../../novel/workflow/NovelWorkflowService";
+import { DirectorCommandService } from "../../novel/director/commands/DirectorCommandService";
 import { NovelWorkflowTaskAdapter } from "../adapters/NovelWorkflowTaskAdapter";
 import {
+  archiveTask as recordTaskArchive,
   getArchivedTaskIds,
   isTaskArchived,
 } from "../taskArchive";
@@ -194,6 +197,84 @@ export class AutoDirectorFollowUpService {
       channelDeliveries: await this.getRecentChannelDeliveries(taskId),
       task,
     };
+  }
+
+  async archiveFollowUp(taskId: string): Promise<{ taskId: string; archived: boolean }> {
+    const row = await prisma.novelWorkflowTask.findUnique({
+      where: { id: taskId },
+      select: { id: true, lane: true, status: true },
+    });
+    if (!row) {
+      throw new AppError("Task not found.", 404);
+    }
+    if (row.lane !== "auto_director") {
+      throw new AppError("Only auto director workflow tasks are supported.", 400);
+    }
+    if (await isTaskArchived("novel_workflow", taskId)) {
+      return { taskId, archived: true };
+    }
+    if (row.status === "queued" || row.status === "running" || row.status === "waiting_approval") {
+      try {
+        await new DirectorCommandService(this.workflowService).enqueueCancelCommand(taskId);
+      } catch {
+        // Best effort: archiving a stuck test task must not fail because cancel failed.
+      }
+    }
+    await recordTaskArchive("novel_workflow", taskId);
+    return { taskId, archived: true };
+  }
+
+  async deleteFollowUp(taskId: string): Promise<{ taskId: string; deleted: boolean }> {
+    const row = await prisma.novelWorkflowTask.findUnique({
+      where: { id: taskId },
+      select: { id: true, lane: true, status: true },
+    });
+    if (!row) {
+      throw new AppError("Task not found.", 404);
+    }
+    if (row.lane !== "auto_director") {
+      throw new AppError("Only auto director workflow tasks are supported.", 400);
+    }
+    if (row.status === "queued" || row.status === "running" || row.status === "waiting_approval") {
+      try {
+        await new DirectorCommandService(this.workflowService).enqueueCancelCommand(taskId);
+      } catch {
+        // Best effort: fall through to physical delete so stuck tasks can always be removed.
+      }
+    }
+    try {
+      await (prisma as unknown as {
+        taskCenterArchive: { deleteMany: (args: unknown) => Promise<unknown> };
+      }).taskCenterArchive.deleteMany({
+        where: { taskKind: "novel_workflow", taskId },
+      });
+    } catch {
+      // Archive table is optional in some environments; hard delete must still proceed.
+    }
+    for (const cleanup of [
+      () => (prisma as unknown as {
+        autoDirectorFollowUpActionLog: { deleteMany: (args: unknown) => Promise<unknown> };
+      }).autoDirectorFollowUpActionLog.deleteMany({ where: { taskId } }),
+      () => (prisma as unknown as {
+        autoDirectorFollowUpNotificationLog: { deleteMany: (args: unknown) => Promise<unknown> };
+      }).autoDirectorFollowUpNotificationLog.deleteMany({ where: { taskId } }),
+      () => (prisma as unknown as {
+        autoDirectorAutoApprovalRecord: { deleteMany: (args: unknown) => Promise<unknown> };
+      }).autoDirectorAutoApprovalRecord.deleteMany({ where: { taskId } }),
+      () => (prisma as unknown as {
+        directorRuntimeInstance: { deleteMany: (args: unknown) => Promise<unknown> };
+      }).directorRuntimeInstance.deleteMany({ where: { workflowTaskId: taskId } }),
+    ]) {
+      try {
+        await cleanup();
+      } catch {
+        // Missing tables or already-cleaned rows must not block physical delete.
+      }
+    }
+    await prisma.novelWorkflowTask.delete({
+      where: { id: taskId },
+    });
+    return { taskId, deleted: true };
   }
 
   private async getRecentChannelDeliveries(taskId: string): Promise<AutoDirectorChannelDeliveryStatus[]> {
