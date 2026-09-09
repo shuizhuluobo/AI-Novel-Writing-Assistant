@@ -564,6 +564,64 @@ test("GET /api/settings/api-keys exposes ollama baseURL and optional-key metadat
   }
 });
 
+test("GET /api/settings/api-keys serves builtin remote model catalogs", async () => {
+  const originalFindMany = prisma.aPIKey.findMany;
+  const originalFetch = global.fetch;
+  const originalCacheFile = process.env.AI_NOVEL_MODEL_CACHE_FILE;
+  const isolatedCacheFile = require("node:path").join(require("node:os").tmpdir(), `model-catalog-cache-test-builtin-${process.pid}.json`);
+  process.env.AI_NOVEL_MODEL_CACHE_FILE = isolatedCacheFile;
+  try {
+    require("node:fs").rmSync(isolatedCacheFile, { force: true });
+  } catch {
+    // Ignore missing cache file.
+  }
+  prisma.aPIKey.findMany = async () => ([
+    {
+      id: "api-key-siliconflow",
+      provider: "siliconflow",
+      key: "test-siliconflow-key",
+      model: "Qwen/Qwen2.5-7B-Instruct",
+      baseURL: "https://siliconflow-mock.example.com/v1",
+      isActive: true,
+      reasoningEnabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  ]);
+  global.fetch = async () => ({
+    ok: true,
+    json: async () => ({ data: [{ id: "Qwen/Qwen2.5-7B-Instruct" }, { id: "deepseek-ai/DeepSeek-V3-2" }] }),
+  });
+
+  const app = createApp();
+  const server = http.createServer(app);
+  const port = await listen(server);
+  try {
+    const response = await originalFetch(`http://127.0.0.1:${port}/api/settings/api-keys`);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.success, true);
+    const siliconflow = payload.data.find((item) => item.provider === "siliconflow");
+    assert.ok(siliconflow);
+    assert.ok(siliconflow.models.includes("Qwen/Qwen2.5-7B-Instruct"));
+    assert.ok(siliconflow.models.includes("deepseek-ai/DeepSeek-V3-2"));
+  } finally {
+    prisma.aPIKey.findMany = originalFindMany;
+    global.fetch = originalFetch;
+    if (originalCacheFile === undefined) {
+      delete process.env.AI_NOVEL_MODEL_CACHE_FILE;
+    } else {
+      process.env.AI_NOVEL_MODEL_CACHE_FILE = originalCacheFile;
+    }
+    try {
+      require("node:fs").rmSync(isolatedCacheFile, { force: true });
+    } catch {
+      // Ignore cache cleanup failures.
+    }
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
 test("GET /api/settings/api-keys uses lightweight local model metadata", async () => {
   const originalFindMany = prisma.aPIKey.findMany;
   const originalFetch = global.fetch;
@@ -675,6 +733,14 @@ test("GET and PUT /api/settings/llm-selection persist the top-level model choice
 test("GET /api/settings/api-keys exposes custom OpenAI-compatible providers", async () => {
   const originalFindMany = prisma.aPIKey.findMany;
   const originalFetch = global.fetch;
+  const originalCacheFile = process.env.AI_NOVEL_MODEL_CACHE_FILE;
+  const isolatedCacheFile = require("node:path").join(require("node:os").tmpdir(), `model-catalog-cache-test-custom-${process.pid}.json`);
+  process.env.AI_NOVEL_MODEL_CACHE_FILE = isolatedCacheFile;
+  try {
+    require("node:fs").rmSync(isolatedCacheFile, { force: true });
+  } catch {
+    // Ignore missing cache file.
+  }
   prisma.aPIKey.findMany = async () => ([
     {
       id: "api-key-custom",

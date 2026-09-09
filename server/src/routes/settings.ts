@@ -214,7 +214,7 @@ function getFallbackModels(provider: LLMProvider, currentModel?: string): string
   return Array.from(new Set([...models, currentModel ?? ""].filter(Boolean)));
 }
 
-function buildBuiltInProviderStatus(
+async function buildBuiltInProviderStatus(
   provider: BuiltinLLMProvider,
   item: {
     displayName?: string | null;
@@ -229,7 +229,7 @@ function buildBuiltInProviderStatus(
     requestIntervalMs?: number | null;
   } | undefined,
   imageModel: string | undefined,
-): BuiltInProviderStatus {
+): Promise<BuiltInProviderStatus> {
   const savedKey = normalizeOptionalText(item?.key);
   const envKey = getProviderEnvApiKey(provider);
   const effectiveKey = savedKey ?? envKey;
@@ -242,7 +242,13 @@ function buildBuiltInProviderStatus(
   const hiddenModels = parseHiddenModels(item?.hiddenModels);
   const fallbackModels = getFallbackModels(provider, configuredModel);
   const currentModel = configuredModel ?? fallbackModels[0] ?? "";
-  const models = filterHiddenModels(fallbackModels, hiddenModels, currentModel);
+  const remoteModels = await getProviderModels(provider, {
+    apiKey: effectiveKey ?? undefined,
+    baseURL: currentBaseURL || undefined,
+    fallbackModel: currentModel,
+    fallbackModels,
+  });
+  const models = filterHiddenModels(remoteModels, hiddenModels, currentModel);
   const currentImageModel = imageModel ?? getDefaultImageModel(provider) ?? null;
   const isConfigured = requiresApiKey ? Boolean(effectiveKey && currentModel) : Boolean(currentModel && currentBaseURL);
   const supportsReasoningEffort = isDeepSeekThinkingModeProvider(provider, currentBaseURL, currentModel);
@@ -509,9 +515,9 @@ router.get("/api-keys", async (_req, res, next) => {
       ...keys.map((item) => item.provider),
     ]));
     const imageModelMap = await getProviderImageModelMap(allProviders);
-    const builtInProviders = SUPPORTED_PROVIDERS.map((provider) =>
+    const builtInProviders = await Promise.all(SUPPORTED_PROVIDERS.map((provider) =>
       buildBuiltInProviderStatus(provider, keyMap.get(provider), imageModelMap.get(provider)),
-    );
+    ));
     const customProviders = await Promise.all(keys
       .filter((item) => !isBuiltInProvider(item.provider))
       .map((item) => buildCustomProviderStatus(item, imageModelMap.get(item.provider))));
