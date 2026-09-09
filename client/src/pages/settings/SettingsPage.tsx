@@ -375,6 +375,7 @@ export default function SettingsPage() {
         provider: provider.provider,
         model: provider.currentModel || undefined,
         baseURL: provider.currentBaseURL || undefined,
+        probeMode: "both",
       },
       {
         onSuccess: (response) => {

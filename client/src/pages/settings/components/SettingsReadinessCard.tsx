@@ -52,6 +52,7 @@ export function buildSettingsReadinessItems(input: {
   modelRoutes?: ModelRoutesResponse | null;
   modelRouteConnectivity?: ModelRouteConnectivityResponse | null;
   isModelRoutesChecking: boolean;
+  hasConnectivityResult?: boolean;
   isStyleSettingsLoaded: boolean;
 }): SettingsReadinessItem[] {
   const {
@@ -61,6 +62,7 @@ export function buildSettingsReadinessItems(input: {
     modelRoutes,
     modelRouteConnectivity,
     isModelRoutesChecking,
+    hasConnectivityResult = false,
     isStyleSettingsLoaded,
   } = input;
   const runnableProviders = providers.filter((item) => item.isConfigured && item.isActive && item.currentModel);
@@ -88,12 +90,14 @@ export function buildSettingsReadinessItems(input: {
     {
       key: "routes",
       title: "模型路由",
-      state: isModelRoutesChecking ? "checking" : hasRoutes && failedRouteCount === 0 ? "ready" : "warning",
+      state: isModelRoutesChecking ? "checking" : !hasConnectivityResult ? "warning" : hasRoutes && failedRouteCount === 0 ? "ready" : "warning",
       description: isModelRoutesChecking
         ? "正在检查开书、拆章、正文生成和审核任务的模型兼容性。"
-        : hasRoutes && failedRouteCount === 0
-          ? "创作任务已有可用路由，后续流程会按任务选择模型。"
-          : "部分创作任务还需要补齐或修复模型路由。",
+        : !hasConnectivityResult
+          ? "模型路由已配置，兼容性尚未检测；到模型路由管理手动检测一次。"
+          : hasRoutes && failedRouteCount === 0
+            ? "创作任务已有可用路由，后续流程会按任务选择模型。"
+            : "部分创作任务还需要补齐或修复模型路由。",
     },
     {
       key: "rag",

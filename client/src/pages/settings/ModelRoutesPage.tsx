@@ -51,6 +51,7 @@ export default function ModelRoutesPage() {
   const [routeDrafts, setRouteDrafts] = useState<Record<string, RouteDraft>>({});
   const [bulkDraft, setBulkDraft] = useState<RouteDraft | null>(null);
   const [structuredFallbackDraft, setStructuredFallbackDraft] = useState<StructuredFallbackDraft | null>(null);
+  const [detectingTaskType, setDetectingTaskType] = useState<string | null>(null);
 
   const apiKeySettingsQuery = useQuery({
     queryKey: queryKeys.settings.apiKeys,
@@ -65,7 +66,7 @@ export default function ModelRoutesPage() {
   const modelRouteConnectivityQuery = useQuery({
     queryKey: queryKeys.settings.modelRouteConnectivity,
     queryFn: () => testModelRouteConnectivity(),
-    enabled: modelRoutesQuery.isSuccess,
+    enabled: false,
     refetchOnWindowFocus: false,
   });
 
@@ -97,46 +98,66 @@ export default function ModelRoutesPage() {
     refetchOnWindowFocus: false,
   });
 
+  const dropConnectivityForTaskTypes = (taskTypesToDrop: string[]) => {
+    const dropSet = new Set(taskTypesToDrop);
+    queryClient.setQueryData(
+      queryKeys.settings.modelRouteConnectivity,
+      (previous: ApiResponse<ModelRouteConnectivityResponse> | undefined) => {
+        if (!previous?.data) {
+          return previous;
+        }
+        return {
+          ...previous,
+          data: {
+            ...previous.data,
+            statuses: previous.data.statuses.filter((item) => !dropSet.has(item.taskType)),
+          },
+        };
+      },
+    );
+  };
+
+  const detectSingleRouteMutation = useMutation({
+    mutationFn: (taskType: string) => testModelRouteConnectivity([taskType]),
+    onMutate: (taskType) => setDetectingTaskType(taskType),
+    onSettled: () => setDetectingTaskType(null),
+    onSuccess: (response) => {
+      if (response.data) {
+        mergeScopedConnectivityResult(response.data);
+      }
+    },
+    onError: (error) => {
+      setActionResult(error instanceof Error ? error.message : "该任务检测失败，请稍后重试。");
+    },
+  });
+
   const saveModelRouteMutation = useMutation({
     mutationFn: (payload: RouteSavePayload) => saveModelRoute(payload),
     onSuccess: async (_response, payload) => {
-      setActionResult("保存完成，这个任务会使用新路由。");
+      setActionResult("保存完成，这个任务会使用新路由；请手动检测一次确认兼容性。");
       await queryClient.invalidateQueries({ queryKey: queryKeys.settings.modelRoutes });
-      try {
-        const scoped = await testModelRouteConnectivity([payload.taskType]);
-        if (scoped.data) {
-          mergeScopedConnectivityResult(scoped.data);
-        } else {
-          await queryClient.invalidateQueries({ queryKey: queryKeys.settings.modelRouteConnectivity });
-        }
-      } catch {
-        await queryClient.invalidateQueries({ queryKey: queryKeys.settings.modelRouteConnectivity });
-      }
+      dropConnectivityForTaskTypes([payload.taskType]);
     },
   });
 
   const saveAllModelRoutesMutation = useMutation({
     mutationFn: async (payloads: RouteSavePayload[]) => {
       await Promise.all(payloads.map((payload) => saveModelRoute(payload)));
-      return payloads.length;
+      return payloads;
     },
-    onSuccess: async (count) => {
-      setActionResult(`保存完成，${count} 个任务会使用新路由。`);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.settings.modelRoutes }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.settings.modelRouteConnectivity }),
-      ]);
+    onSuccess: async (payloads) => {
+      setActionResult(`保存完成，${payloads.length} 个任务会使用新路由；请手动检测确认兼容性。`);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.settings.modelRoutes });
+      dropConnectivityForTaskTypes(payloads.map((payload) => payload.taskType));
     },
   });
 
   const saveStructuredFallbackMutation = useMutation({
     mutationFn: (payload: Partial<StructuredFallbackSettings>) => saveStructuredFallbackConfig(payload),
     onSuccess: async () => {
-      setActionResult("结构化备用模型保存完成。");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.settings.structuredFallback }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.settings.modelRouteConnectivity }),
-      ]);
+      setActionResult("结构化备用模型保存完成；备用模型影响全部结构化检测，请手动重新检测。");
+      await queryClient.invalidateQueries({ queryKey: queryKeys.settings.structuredFallback });
+      await queryClient.removeQueries({ queryKey: queryKeys.settings.modelRouteConnectivity });
     },
   });
 
@@ -291,11 +312,11 @@ export default function ModelRoutesPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-2 text-sm text-muted-foreground">
-            <div>检测会覆盖普通对话和结构化输出；表单修改需要保存后参与检测。</div>
+            <div>检测只在手动触发时执行，覆盖普通对话和结构化输出；表单修改需要保存后参与检测。</div>
             <div className="flex flex-wrap items-center gap-3 text-xs">
               <span className="inline-flex items-center gap-2">
                 <RouteStatusDot
-                  state={modelRouteConnectivityQuery.isPending || modelRouteConnectivityQuery.isFetching
+                  state={modelRouteConnectivityQuery.isFetching
                     ? "checking"
                     : connectivitySummary.failed > 0
                       ? "failed"
@@ -303,7 +324,7 @@ export default function ModelRoutesPage() {
                         ? "healthy"
                         : "idle"}
                 />
-                {modelRouteConnectivityQuery.isPending || modelRouteConnectivityQuery.isFetching
+                {modelRouteConnectivityQuery.isFetching
                   ? "正在检测生效路由..."
                   : connectivitySummary.total > 0
                     ? `检测结果：${connectivitySummary.total} 条路由，健康 ${connectivitySummary.healthy}，异常 ${connectivitySummary.failed}`
@@ -321,7 +342,11 @@ export default function ModelRoutesPage() {
               disabled={modelRouteConnectivityQuery.isFetching || !modelRoutesQuery.isSuccess}
             >
               <RefreshCw className={`h-4 w-4 ${modelRouteConnectivityQuery.isFetching ? "animate-spin" : ""}`} />
-              {modelRouteConnectivityQuery.isFetching ? "检测中..." : "重新检测"}
+              {modelRouteConnectivityQuery.isFetching
+                ? "检测中..."
+                : modelRouteConnectivityQuery.dataUpdatedAt > 0
+                  ? "重新检测"
+                  : "开始检测"}
             </Button>
             <Button asChild variant="outline">
               <Link to="/settings">
@@ -464,7 +489,7 @@ export default function ModelRoutesPage() {
         const connectivity = connectivityMap.get(taskType);
         const connectivityState = resolveConnectivityState(
           connectivity,
-          modelRouteConnectivityQuery.isPending || modelRouteConnectivityQuery.isFetching,
+          detectingTaskType === taskType || modelRouteConnectivityQuery.isFetching,
         );
         const isDirty = dirtyTaskTypeSet.has(taskType);
         const hasUnsavedRouteDiff = connectivity != null
@@ -528,17 +553,27 @@ export default function ModelRoutesPage() {
                     </div>
                   ) : null}
                   {hasUnsavedRouteDiff ? (
-                    <div>检测结果来自生效路由；保存后会自动重新检测。</div>
+                    <div>检测结果来自生效路由；保存后需要手动重新检测。</div>
                   ) : null}
                 </div>
-                <Button
-                  size="sm"
-                  onClick={() => saveModelRouteMutation.mutate(buildRouteSavePayload(taskType, draft))}
-                  disabled={isSavingRoutes || !draft.provider.trim() || !draft.model.trim()}
-                >
-                  <Save className="h-4 w-4" />
-                  保存路由
-                </Button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => detectSingleRouteMutation.mutate(taskType)}
+                    disabled={detectingTaskType === taskType || modelRouteConnectivityQuery.isFetching || isSavingRoutes}
+                  >
+                    {detectingTaskType === taskType ? "检测中..." : "检测"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => saveModelRouteMutation.mutate(buildRouteSavePayload(taskType, draft))}
+                    disabled={isSavingRoutes || !draft.provider.trim() || !draft.model.trim()}
+                  >
+                    <Save className="h-4 w-4" />
+                    保存路由
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

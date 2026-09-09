@@ -30,7 +30,7 @@ export default function SettingsOverviewPage() {
   const connectivityQuery = useQuery({
     queryKey: queryKeys.settings.modelRouteConnectivity,
     queryFn: () => testModelRouteConnectivity(),
-    enabled: routesQuery.isSuccess,
+    enabled: false,
     refetchOnWindowFocus: false,
   });
   const ragQuery = useQuery({ queryKey: queryKeys.settings.rag, queryFn: getRagSettings });
@@ -41,9 +41,10 @@ export default function SettingsOverviewPage() {
     modelRouteConnectivity: connectivityQuery.data?.data,
     ragSettings: ragQuery.data?.data,
     styleSettings: styleQuery.data?.data,
-    isModelRoutesChecking: connectivityQuery.isPending || connectivityQuery.isFetching,
+    isModelRoutesChecking: connectivityQuery.isFetching,
+    hasConnectivityResult: connectivityQuery.dataUpdatedAt > 0,
     isStyleSettingsLoaded: styleQuery.isSuccess,
-  }), [connectivityQuery.data?.data, connectivityQuery.isFetching, connectivityQuery.isPending, providersQuery.data?.data, ragQuery.data?.data, routesQuery.data?.data, styleQuery.data?.data, styleQuery.isSuccess]);
+  }), [connectivityQuery.data?.data, connectivityQuery.dataUpdatedAt, connectivityQuery.isFetching, providersQuery.data?.data, ragQuery.data?.data, routesQuery.data?.data, styleQuery.data?.data, styleQuery.isSuccess]);
   const configuredProvider = providersQuery.data?.data?.find((item) => item.isConfigured && item.isActive);
   const routeCount = routesQuery.data?.data?.routes.filter((route) => route.provider && route.model).length ?? 0;
   const rag = ragQuery.data?.data;
