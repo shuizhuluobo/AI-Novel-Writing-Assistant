@@ -28,6 +28,7 @@
 - 长弧伏笔被当成当前章阻断：检查时间线钩子的 `resolveMode` 和 `blocking` 是否被误标成 `immediate + blocking`，以及检测器是否把 `short_arc` / `long_arc` 升级成硬失败。
 - 重新生成候选没有进入新一轮：检查 batch reuse、command idempotency 和候选阶段运行态。
 - 生成没有使用知识库资料：检查 `knowledgeDocumentIds`、小说/世界绑定、启用状态和 prompt context requirement。
+- 8B 本地模型（Ollama）无响应或 JSON 报错：先查三处再动提示词。服务端暂不传 `num_ctx`，Ollama 默认 4096 token 上下文会被静默截断，本项目章节写作输入约 5k～8k token，system 指令丢失后必然乱回；`deepseek-r1:8b` / `qwen3:8b` 是思考模型，思考占用大量输出且慢，结构化任务应关闭思考；章节列表等多枚举 schema 超出 8B 指令跟随能力，repair 循环后仍会失败。当前结论是 8B 只做连通性测试，生产走 API（默认 `deepseek-v4-flash` 已是便宜路由）。
 
 ## 失败模式
 
