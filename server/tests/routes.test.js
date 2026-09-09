@@ -334,36 +334,40 @@ test("DELETE /api/rag/jobs/finished clears finished job records", async () => {
 });
 
 test("POST /api/llm/model-routes/connectivity returns per-task connectivity statuses", async () => {
+  const calls = [];
   const originalTestModelRoutes = llmConnectivityService.testModelRoutes;
-  llmConnectivityService.testModelRoutes = async () => ({
-    testedAt: new Date().toISOString(),
-    statuses: [{
-      taskType: "repair",
-      provider: "deepseek",
-      model: "deepseek-chat",
-      ok: true,
-      latency: 128,
-      error: null,
-      plain: {
+  llmConnectivityService.testModelRoutes = async (...args) => {
+    calls.push(args);
+    return {
+      testedAt: new Date().toISOString(),
+      statuses: [{
+        taskType: "repair",
+        provider: "deepseek",
+        model: "deepseek-chat",
         ok: true,
         latency: 128,
         error: null,
-      },
-      structured: {
-        ok: true,
-        latency: 140,
-        error: null,
-        strategy: "prompt_json",
-        reasoningForcedOff: true,
-        fallbackAvailable: true,
-        fallbackUsed: false,
-        errorCategory: null,
-        nativeJsonObject: false,
-        nativeJsonSchema: false,
-        profileFamily: "custom_openai_compatible",
-      },
-    }],
-  });
+        plain: {
+          ok: true,
+          latency: 128,
+          error: null,
+        },
+        structured: {
+          ok: true,
+          latency: 140,
+          error: null,
+          strategy: "prompt_json",
+          reasoningForcedOff: true,
+          fallbackAvailable: true,
+          fallbackUsed: false,
+          errorCategory: null,
+          nativeJsonObject: false,
+          nativeJsonSchema: false,
+          profileFamily: "custom_openai_compatible",
+        },
+      }],
+    };
+  };
 
   const app = createApp();
   const server = http.createServer(app);
@@ -380,6 +384,16 @@ test("POST /api/llm/model-routes/connectivity returns per-task connectivity stat
     assert.equal(payload.data.statuses[0].plain.ok, true);
     assert.equal(payload.data.statuses[0].structured.strategy, "prompt_json");
     assert.equal(payload.data.statuses[0].structured.reasoningForcedOff, true);
+
+    const scopedResponse = await fetch(`http://127.0.0.1:${port}/api/llm/model-routes/connectivity`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ taskTypes: ["repair", "not_a_task_type"] }),
+    });
+    assert.equal(scopedResponse.status, 200);
+    const scopedPayload = await scopedResponse.json();
+    assert.equal(scopedPayload.success, true);
+    assert.deepEqual(calls[1], [["repair"]]);
   } finally {
     llmConnectivityService.testModelRoutes = originalTestModelRoutes;
     await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));

@@ -437,8 +437,11 @@ export async function getModelRoutes() {
   return data;
 }
 
-export async function testModelRouteConnectivity() {
-  const { data } = await apiClient.post<ApiResponse<ModelRouteConnectivityResponse>>("/llm/model-routes/connectivity");
+export async function testModelRouteConnectivity(taskTypes?: string[]) {
+  const { data } = await apiClient.post<ApiResponse<ModelRouteConnectivityResponse>>(
+    "/llm/model-routes/connectivity",
+    taskTypes && taskTypes.length > 0 ? { taskTypes } : {},
+  );
   return data;
 }
 

@@ -26,6 +26,27 @@ const STRUCTURED_PROBE_SCHEMA = z.object({
   status: z.literal("ok"),
 });
 
+const PROBE_ATTEMPT_TIMEOUT_MS = 60_000;
+
+async function withProbeTimeout<T>(promise: Promise<T>, label: string, timeoutMs = PROBE_ATTEMPT_TIMEOUT_MS): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label}超时（约 ${Math.round(timeoutMs / 1000)} 秒无响应），请检查模型服务是否可用。`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 export interface ConnectivityProbeStatus {
   ok: boolean;
   latency: number | null;
@@ -128,7 +149,7 @@ async function testPlainConnection(input: {
       requestProtocol: resolved.requestProtocol,
     });
     const start = Date.now();
-    await llm.invoke([new HumanMessage("请只回复 ok")]);
+    await withProbeTimeout(llm.invoke([new HumanMessage("请只回复 ok")]), "普通对话探测");
     const plain = {
       ok: true,
       latency: Date.now() - start,
@@ -187,7 +208,7 @@ async function testStructuredConnection(input: {
   });
   try {
     const startedAt = Date.now();
-    const result = await invokeStructuredLlmDetailed({
+    const result = await withProbeTimeout(invokeStructuredLlmDetailed({
       provider: resolved.provider,
       model: resolved.model,
       apiKey: input.apiKey,
@@ -206,7 +227,7 @@ async function testStructuredConnection(input: {
       ],
       maxRepairAttempts: 1,
       disableFallbackModel: true,
-    });
+    }), "结构化输出探测");
     const structured: StructuredConnectivityProbeStatus = {
       ok: true,
       latency: Date.now() - startedAt,
@@ -289,6 +310,54 @@ async function mergeProbeStatuses(input: {
   };
 }
 
+async function probePlainChain(input: {
+  provider: LLMProvider;
+  model?: string;
+  apiKey?: string;
+  baseURL?: string;
+  authMode?: ProviderAuthMode;
+  requestProtocol?: ModelRouteRequestProtocol;
+}): Promise<LLMConnectivityStatus | null> {
+  let plain: LLMConnectivityStatus | null = null;
+  for (const requestProtocol of getProtocolCandidates(input.requestProtocol)) {
+    plain = await testPlainConnection({ ...input, requestProtocol });
+    if (plain.ok) {
+      break;
+    }
+  }
+  return plain;
+}
+
+async function probeStructuredChain(input: {
+  provider: LLMProvider;
+  model?: string;
+  apiKey?: string;
+  baseURL?: string;
+  authMode?: ProviderAuthMode;
+  requestProtocol?: ModelRouteRequestProtocol;
+  structuredResponseFormat?: ModelRouteStructuredResponseFormat;
+}): Promise<LLMConnectivityStatus | null> {
+  let structured: LLMConnectivityStatus | null = null;
+  for (const requestProtocol of getProtocolCandidates(input.requestProtocol)) {
+    for (const structuredResponseFormat of getStructuredFormatCandidates({
+      provider: input.provider,
+      model: input.model,
+      baseURL: input.baseURL,
+      requestProtocol,
+      preferred: input.structuredResponseFormat,
+    })) {
+      structured = await testStructuredConnection({ ...input, requestProtocol, structuredResponseFormat });
+      if (structured.ok) {
+        break;
+      }
+    }
+    if (structured?.ok) {
+      break;
+    }
+  }
+  return structured;
+}
+
 async function testConnection(input: {
   provider: LLMProvider;
   model?: string;
@@ -300,40 +369,31 @@ async function testConnection(input: {
   structuredResponseFormat?: ModelRouteStructuredResponseFormat;
 }): Promise<LLMConnectivityStatus> {
   const probeMode = input.probeMode ?? "both";
-  let plain: LLMConnectivityStatus | null = null;
-  let structured: LLMConnectivityStatus | null = null;
-  if (probeMode === "plain" || probeMode === "both") {
-    for (const requestProtocol of getProtocolCandidates(input.requestProtocol)) {
-      plain = await testPlainConnection({ ...input, requestProtocol });
-      if (plain.ok) {
-        break;
-      }
-    }
+  if (probeMode === "both") {
+    const [plain, structured] = await Promise.all([
+      probePlainChain(input),
+      probeStructuredChain(input),
+    ]);
+    return mergeProbeStatuses({
+      provider: input.provider,
+      model: input.model,
+      plain,
+      structured,
+    });
   }
-  if (probeMode === "structured" || probeMode === "both") {
-    for (const requestProtocol of getProtocolCandidates(input.requestProtocol)) {
-      for (const structuredResponseFormat of getStructuredFormatCandidates({
-        provider: input.provider,
-        model: input.model,
-        baseURL: input.baseURL,
-        requestProtocol,
-        preferred: input.structuredResponseFormat,
-      })) {
-        structured = await testStructuredConnection({ ...input, requestProtocol, structuredResponseFormat });
-        if (structured.ok) {
-          break;
-        }
-      }
-      if (structured?.ok) {
-        break;
-      }
-    }
+  if (probeMode === "plain") {
+    return mergeProbeStatuses({
+      provider: input.provider,
+      model: input.model,
+      plain: await probePlainChain(input),
+      structured: null,
+    });
   }
   return mergeProbeStatuses({
     provider: input.provider,
     model: input.model,
-    plain,
-    structured,
+    plain: null,
+    structured: await probeStructuredChain(input),
   });
 }
 
@@ -341,7 +401,9 @@ async function testModelRoutes(taskTypes: readonly ModelRouteTaskType[] = MODEL_
   testedAt: string;
   statuses: ModelRouteConnectivityStatus[];
 }> {
-  const resolvedRoutes = await Promise.all(taskTypes.map(async (taskType) => ({
+  const scopedTaskTypes = taskTypes.filter((taskType) => MODEL_ROUTE_TASK_TYPES.includes(taskType));
+  const effectiveTaskTypes = scopedTaskTypes.length > 0 ? scopedTaskTypes : [...MODEL_ROUTE_TASK_TYPES];
+  const resolvedRoutes = await Promise.all(effectiveTaskTypes.map(async (taskType) => ({
     taskType,
     ...(await resolveModel(taskType)),
   })));

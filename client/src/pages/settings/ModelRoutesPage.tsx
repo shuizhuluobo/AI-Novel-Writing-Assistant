@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CopyCheck, RefreshCw, Save } from "lucide-react";
-import type { StructuredFallbackSettings } from "@/api/settings";
+import type { ApiResponse } from "@ai-novel/shared/types/api";
+import type { ModelRouteConnectivityResponse, StructuredFallbackSettings } from "@/api/settings";
 import {
   getAPIKeySettings,
   getModelRoutes,
@@ -63,10 +64,32 @@ export default function ModelRoutesPage() {
 
   const modelRouteConnectivityQuery = useQuery({
     queryKey: queryKeys.settings.modelRouteConnectivity,
-    queryFn: testModelRouteConnectivity,
+    queryFn: () => testModelRouteConnectivity(),
     enabled: modelRoutesQuery.isSuccess,
     refetchOnWindowFocus: false,
   });
+
+  const mergeScopedConnectivityResult = (scoped: ModelRouteConnectivityResponse) => {
+    queryClient.setQueryData(
+      queryKeys.settings.modelRouteConnectivity,
+      (previous: ApiResponse<ModelRouteConnectivityResponse> | undefined) => {
+        if (!previous?.data) {
+          return previous;
+        }
+        const merged = new Map(previous.data.statuses.map((item) => [item.taskType, item]));
+        for (const item of scoped.statuses) {
+          merged.set(item.taskType, item);
+        }
+        return {
+          ...previous,
+          data: {
+            testedAt: scoped.testedAt,
+            statuses: Array.from(merged.values()),
+          },
+        };
+      },
+    );
+  };
 
   const structuredFallbackQuery = useQuery({
     queryKey: queryKeys.settings.structuredFallback,
@@ -76,12 +99,19 @@ export default function ModelRoutesPage() {
 
   const saveModelRouteMutation = useMutation({
     mutationFn: (payload: RouteSavePayload) => saveModelRoute(payload),
-    onSuccess: async () => {
+    onSuccess: async (_response, payload) => {
       setActionResult("保存完成，这个任务会使用新路由。");
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.settings.modelRoutes }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.settings.modelRouteConnectivity }),
-      ]);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.settings.modelRoutes });
+      try {
+        const scoped = await testModelRouteConnectivity([payload.taskType]);
+        if (scoped.data) {
+          mergeScopedConnectivityResult(scoped.data);
+        } else {
+          await queryClient.invalidateQueries({ queryKey: queryKeys.settings.modelRouteConnectivity });
+        }
+      } catch {
+        await queryClient.invalidateQueries({ queryKey: queryKeys.settings.modelRouteConnectivity });
+      }
     },
   });
 

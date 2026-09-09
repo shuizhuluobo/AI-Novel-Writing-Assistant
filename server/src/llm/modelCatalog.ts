@@ -180,32 +180,32 @@ export function resolveModelsEndpoint(baseURL: string): string {
 async function fetchOllamaModels(baseURL: string): Promise<string[]> {
   const nativeBaseURL = baseURL.endsWith("/v1") ? baseURL.slice(0, -3) : baseURL;
 
-  try {
-    const payload = await fetchJson(`${nativeBaseURL}/api/tags`, {
+  const [tagsResult, compatibleResult] = await Promise.allSettled([
+    fetchJson(`${nativeBaseURL}/api/tags`, {
       method: "GET",
       headers: {
         Accept: "application/json",
       },
-    });
-    const models = parseModelIds(payload);
-    if (models.length > 0) {
-      return models;
-    }
-  } catch {
-    // Fall back to the OpenAI-compatible models endpoint.
+    }),
+    fetchJson(resolveModelsEndpoint(baseURL), {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    }),
+  ]);
+  const tagsModels = tagsResult.status === "fulfilled" ? parseModelIds(tagsResult.value) : [];
+  if (tagsModels.length > 0) {
+    return tagsModels;
   }
-
-  const payload = await fetchJson(resolveModelsEndpoint(baseURL), {
-    method: "GET",
-    headers: {
-      Accept: "application/json",
-    },
-  });
-  const models = parseModelIds(payload);
-  if (models.length === 0) {
-    throw new Error("模型列表为空。");
+  const compatibleModels = compatibleResult.status === "fulfilled" ? parseModelIds(compatibleResult.value) : [];
+  if (compatibleModels.length > 0) {
+    return compatibleModels;
   }
-  return models;
+  if (tagsResult.status === "rejected") {
+    throw tagsResult.reason instanceof Error ? tagsResult.reason : new Error("模型列表为空。");
+  }
+  throw new Error("模型列表为空。");
 }
 
 async function fetchProviderModels(

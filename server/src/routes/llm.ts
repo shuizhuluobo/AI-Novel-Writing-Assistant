@@ -1,5 +1,6 @@
 import { Router } from "express";
 import type { ApiResponse } from "@ai-novel/shared/types/api";
+import type { ModelRouteTaskType } from "@ai-novel/shared/types/novel";
 import { PROVIDER_AUTH_MODES } from "@ai-novel/shared/types/llm";
 import { z } from "zod";
 import { prisma } from "../db/prisma";
@@ -107,9 +108,21 @@ router.get("/model-routes", async (_req, res, next) => {
   }
 });
 
-router.post("/model-routes/connectivity", async (_req, res, next) => {
+router.post("/model-routes/connectivity", async (req, res, next) => {
   try {
-    const data = await llmConnectivityService.testModelRoutes();
+    const rawTaskTypes = (req.body as { taskTypes?: unknown } | undefined)?.taskTypes;
+    const requestedTaskTypes = Array.isArray(rawTaskTypes)
+      ? rawTaskTypes
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .filter((item) => (MODEL_ROUTE_TASK_TYPES as readonly string[]).includes(item))
+      : [];
+    const data = await llmConnectivityService.testModelRoutes(
+      requestedTaskTypes.length > 0
+        ? requestedTaskTypes as ModelRouteTaskType[]
+        : undefined,
+    );
     res.status(200).json({
       success: true,
       data,

@@ -29,7 +29,7 @@ export default function SettingsOverviewPage() {
   const routesQuery = useQuery({ queryKey: queryKeys.settings.modelRoutes, queryFn: getModelRoutes });
   const connectivityQuery = useQuery({
     queryKey: queryKeys.settings.modelRouteConnectivity,
-    queryFn: testModelRouteConnectivity,
+    queryFn: () => testModelRouteConnectivity(),
     enabled: routesQuery.isSuccess,
     refetchOnWindowFocus: false,
   });
