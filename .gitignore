@@ -39,3 +39,6 @@ server/prisma-diff-migrations-to-schema.sql
 .spec-workflow/
 .codex-backups/
 .cursor/
+
+model-catalog-cache.json
+server/model-catalog-cache.json

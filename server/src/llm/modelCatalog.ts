@@ -1,4 +1,7 @@
 import type { LLMProvider, ProviderAuthMode } from "@ai-novel/shared/types/llm";
+import fs from "node:fs";
+import path from "node:path";
+import { resolveDataRoot } from "../runtime/appPaths";
 import {
   isBuiltInProvider,
   providerRequiresApiKey,
@@ -24,6 +27,88 @@ interface GetProviderModelsOptions {
 
 const MODEL_CACHE_TTL_MS = 30 * 60 * 1000;
 const modelCache = new Map<string, ModelCacheItem>();
+const DISK_CACHE_MAX_ENTRIES = 100;
+const DISK_CACHE_MAX_MODELS_PER_PROVIDER = 1000;
+
+interface DiskModelCacheFile {
+  version: 1;
+  entries: Record<string, ModelCacheItem>;
+}
+
+function resolveDiskCacheFile(): string | null {
+  try {
+    const override = process.env.AI_NOVEL_MODEL_CACHE_FILE?.trim();
+    if (override) {
+      return override;
+    }
+    return path.join(resolveDataRoot(), "model-catalog-cache.json");
+  } catch {
+    return null;
+  }
+}
+
+function readDiskCache(): Record<string, ModelCacheItem> {
+  const file = resolveDiskCacheFile();
+  if (!file) {
+    return {};
+  }
+  try {
+    if (!fs.existsSync(file)) {
+      return {};
+    }
+    const parsed = JSON.parse(fs.readFileSync(file, "utf-8")) as Partial<DiskModelCacheFile>;
+    if (!parsed || parsed.version !== 1 || !parsed.entries || typeof parsed.entries !== "object") {
+      return {};
+    }
+    const now = Date.now();
+    const result: Record<string, ModelCacheItem> = {};
+    for (const [key, entry] of Object.entries(parsed.entries)) {
+      if (!entry || !Array.isArray(entry.models) || typeof entry.cachedAt !== "number") {
+        continue;
+      }
+      if (now - entry.cachedAt > MODEL_CACHE_TTL_MS) {
+        continue;
+      }
+      result[key] = {
+        models: uniqueModels(entry.models).slice(0, DISK_CACHE_MAX_MODELS_PER_PROVIDER),
+        cachedAt: entry.cachedAt,
+      };
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+function writeDiskCacheEntry(cacheKey: string, item: ModelCacheItem): void {
+  const file = resolveDiskCacheFile();
+  if (!file) {
+    return;
+  }
+  try {
+    const entries = readDiskCache();
+    entries[cacheKey] = {
+      models: uniqueModels(item.models).slice(0, DISK_CACHE_MAX_MODELS_PER_PROVIDER),
+      cachedAt: item.cachedAt,
+    };
+    const sortedKeys = Object.keys(entries)
+      .sort((left, right) => (entries[right]?.cachedAt ?? 0) - (entries[left]?.cachedAt ?? 0))
+      .slice(0, DISK_CACHE_MAX_ENTRIES);
+    const trimmed: Record<string, ModelCacheItem> = {};
+    for (const key of sortedKeys) {
+      const entry = entries[key];
+      if (entry) {
+        trimmed[key] = entry;
+      }
+    }
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmpFile = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmpFile, JSON.stringify({ version: 1, entries: trimmed }), "utf-8");
+    fs.renameSync(tmpFile, file);
+  } catch {
+    // 磁盘缓存只是加速手段，写入失败时静默回退到内存缓存。
+  }
+}
 
 function uniqueModels(models: string[]): string[] {
   return Array.from(new Set(models.map((item) => item.trim()).filter(Boolean)));
@@ -74,23 +159,30 @@ function getCacheKey(provider: LLMProvider, baseURL?: string): string {
 function getCachedModels(provider: LLMProvider, baseURL?: string): string[] | undefined {
   const cacheKey = getCacheKey(provider, baseURL);
   const item = modelCache.get(cacheKey);
-  if (!item) {
-    return undefined;
-  }
-  const expired = Date.now() - item.cachedAt > MODEL_CACHE_TTL_MS;
-  if (expired) {
+  if (item) {
+    const expired = Date.now() - item.cachedAt > MODEL_CACHE_TTL_MS;
+    if (!expired) {
+      return item.models;
+    }
     modelCache.delete(cacheKey);
-    return undefined;
   }
-  return item.models;
+  const diskItem = readDiskCache()[cacheKey];
+  if (diskItem && diskItem.models.length > 0) {
+    modelCache.set(cacheKey, diskItem);
+    return diskItem.models;
+  }
+  return undefined;
 }
 
 function setCachedModels(provider: LLMProvider, models: string[], baseURL?: string): string[] {
   const normalized = uniqueModels(models);
-  modelCache.set(getCacheKey(provider, baseURL), {
+  const cacheKey = getCacheKey(provider, baseURL);
+  const item: ModelCacheItem = {
     models: normalized,
     cachedAt: Date.now(),
-  });
+  };
+  modelCache.set(cacheKey, item);
+  writeDiskCacheEntry(cacheKey, item);
   return normalized;
 }
 
