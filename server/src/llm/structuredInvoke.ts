@@ -476,6 +476,7 @@ export function summarizeStructuredOutputFailure(input: {
     ? input.error.category
     : extractStructuredOutputErrorCategory(message) ?? classifyStructuredOutputFailure({ error: input.error });
   const suffix = input.fallbackAvailable ? "，可考虑启用结构化备用模型。" : "。";
+  const isPaymentRequired = /402\s*status code/i.test(message) || /payment required/i.test(message);
   const incompleteJsonSummary = input.fallbackAvailable
     ? "模型输出的 JSON 被截断或不完整，可能是输出被截断或 token 上限不足；建议先重试，必要时切换更强模型或启用结构化备用模型。"
     : "模型输出的 JSON 被截断或不完整，可能是输出被截断或 token 上限不足；建议先重试，必要时切换更强模型。";
@@ -485,7 +486,9 @@ export function summarizeStructuredOutputFailure(input: {
     incomplete_json: incompleteJsonSummary,
     malformed_json: `模型输出的 JSON 格式不稳定${suffix}`,
     schema_mismatch: `模型输出未满足目标结构要求${suffix}`,
-    transport_error: `结构化调用过程发生传输或服务端错误${suffix}`,
+    transport_error: isPaymentRequired
+      ? `服务商返回 402（一般为账户欠费或余额不足），请检查该厂商账户余额后再重试${suffix}`
+      : `结构化调用过程发生传输或服务端错误${suffix}`,
   };
   return {
     category,

@@ -302,6 +302,18 @@ test("summarizeStructuredOutputFailure tells users to retry or switch models for
   assert.match(summary.summary, /更强模型|备用模型/);
 });
 
+test("summarizeStructuredOutputFailure explains billing for 402 transport errors", () => {
+  const summary = structuredInvoke.summarizeStructuredOutputFailure({
+    error: new Error("402 status code (no body)"),
+    fallbackAvailable: false,
+  });
+
+  assert.equal(summary.category, "transport_error");
+  assert.equal(summary.failureCode, "STRUCTURED_OUTPUT_TRANSPORT_ERROR");
+  assert.match(summary.summary, /402/);
+  assert.match(summary.summary, /欠费|余额/);
+});
+
 test("invokeStructuredLlmDetailed degrades to prompt JSON before using fallback models", async () => {
   const originalResolveOptions = factory.resolveLLMClientOptions;
   const originalCreateLLM = factory.createLLMFromResolvedOptions;
