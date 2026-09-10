@@ -164,7 +164,6 @@ export const PROVIDERS: Record<BuiltinLLMProvider, ProviderConfig> = {
     models: [
       "qwen3.8-flash",
       "deepseek-v4-flash",
-      "ZHIPU/GLM-5.3-Flash",
       "qwen-plus",
       "qwen-max",
       "qwen-turbo",

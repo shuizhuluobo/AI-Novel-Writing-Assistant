@@ -90,6 +90,24 @@ test("extractLlmTokenUsage reads anthropic cache fields", () => {
   });
 });
 
+test("extractLlmTokenUsage reads langchain cache_read mapping", () => {
+  const usage = extractLlmTokenUsage({
+    usage_metadata: {
+      prompt_tokens: 5000,
+      completion_tokens: 300,
+      total_tokens: 5300,
+      input_token_details: { cache_read: 4200 },
+    },
+  });
+
+  assert.deepEqual(usage, {
+    promptTokens: 5000,
+    completionTokens: 300,
+    cachedTokens: 4200,
+    totalTokens: 5300,
+  });
+});
+
 test("mergeStreamTokenUsage keeps cached token peaks", () => {
   const merged = mergeStreamTokenUsage(
     {

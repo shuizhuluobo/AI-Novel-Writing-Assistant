@@ -125,6 +125,16 @@ function extractUsageObject(value: unknown): LlmTokenUsageSnapshot | null {
       cachedTokens?: unknown;
       cacheCreationInputTokens?: unknown;
     } | null;
+    input_token_details?: {
+      cached_tokens?: unknown;
+      cache_read?: unknown;
+      cache_creation?: unknown;
+    } | null;
+    inputTokenDetails?: {
+      cachedTokens?: unknown;
+      cacheRead?: unknown;
+      cacheCreation?: unknown;
+    } | null;
   };
   const details = usage.prompt_tokens_details ?? usage.promptTokensDetails;
   const detailsRecord = details && typeof details === "object" ? details as {
@@ -132,6 +142,15 @@ function extractUsageObject(value: unknown): LlmTokenUsageSnapshot | null {
     cachedTokens?: unknown;
     cache_creation_input_tokens?: unknown;
     cacheCreationInputTokens?: unknown;
+  } : null;
+  const inputDetails = usage.input_token_details ?? usage.inputTokenDetails;
+  const inputDetailsRecord = inputDetails && typeof inputDetails === "object" ? inputDetails as {
+    cached_tokens?: unknown;
+    cachedTokens?: unknown;
+    cache_read?: unknown;
+    cacheRead?: unknown;
+    cache_creation?: unknown;
+    cacheCreation?: unknown;
   } : null;
   return normalizeSnapshot({
     promptTokens: usage.prompt_tokens ?? usage.promptTokens ?? usage.input_tokens ?? usage.inputTokens,
@@ -141,12 +160,18 @@ function extractUsageObject(value: unknown): LlmTokenUsageSnapshot | null {
       ?? usage.outputTokenDetails?.reasoning,
     cachedTokens: detailsRecord?.cached_tokens
       ?? detailsRecord?.cachedTokens
+      ?? inputDetailsRecord?.cached_tokens
+      ?? inputDetailsRecord?.cachedTokens
+      ?? inputDetailsRecord?.cache_read
+      ?? inputDetailsRecord?.cacheRead
       ?? usage.cached_tokens
       ?? usage.cachedTokens
       ?? usage.cache_read_input_tokens
       ?? usage.cacheReadInputTokens,
     cacheCreationTokens: detailsRecord?.cache_creation_input_tokens
       ?? detailsRecord?.cacheCreationInputTokens
+      ?? inputDetailsRecord?.cache_creation
+      ?? inputDetailsRecord?.cacheCreation
       ?? usage.cache_creation_input_tokens
       ?? usage.cacheCreationInputTokens,
     totalTokens: usage.total_tokens ?? usage.totalTokens,
