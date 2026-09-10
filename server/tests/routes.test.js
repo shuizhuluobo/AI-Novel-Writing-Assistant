@@ -1048,8 +1048,47 @@ test("POST /api/settings/custom-providers creates a custom provider entry", asyn
   }
 });
 
-test("DELETE /api/settings/custom-providers/:provider removes custom providers not in use", async () => {
-  const originalFindUnique = prisma.aPIKey.findUnique;
+test("POST /api/llm/model-routes/reset-temperatures restores role default temperatures", async () => {
+  const originalFindUnique = prisma.modelRouteConfig.findUnique;
+  const originalUpdate = prisma.modelRouteConfig.update;
+  const updated = [];
+  prisma.modelRouteConfig.findUnique = async ({ where }) => ({
+    taskType: where.taskType,
+    provider: "bailian",
+    model: "qwen3.8-flash",
+    temperature: 0.7,
+  });
+  prisma.modelRouteConfig.update = async ({ where, data }) => {
+    updated.push({ taskType: where.taskType, temperature: data.temperature });
+    return { taskType: where.taskType, ...data };
+  };
+
+  const app = createApp();
+  const server = http.createServer(app);
+  const port = await listen(server);
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/llm/model-routes/reset-temperatures`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.success, true);
+    const byTask = new Map(payload.data.map((item) => [item.taskType, item.temperature]));
+    assert.equal(byTask.get("writer"), 0.8);
+    assert.equal(byTask.get("critical_review"), 0.1);
+    assert.equal(byTask.get("chat"), 0.7);
+    assert.equal(updated.length, 11);
+    assert.ok(updated.every((item) => item.temperature === byTask.get(item.taskType)));
+  } finally {
+    prisma.modelRouteConfig.findUnique = originalFindUnique;
+    prisma.modelRouteConfig.update = originalUpdate;
+    await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+test("DELETE /api/settings/custom-providers/:provider removes custom providers not in use", async () => {  const originalFindUnique = prisma.aPIKey.findUnique;
   const originalFindFirst = prisma.modelRouteConfig.findFirst;
   const originalDelete = prisma.aPIKey.delete;
   prisma.aPIKey.findUnique = async () => ({

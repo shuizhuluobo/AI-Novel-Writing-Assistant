@@ -7,7 +7,7 @@ import { prisma } from "../db/prisma";
 import { llmConnectivityService } from "../llm/connectivity";
 import { getStructuredFallbackSettings, saveStructuredFallbackSettings } from "../llm/structuredFallbackSettings";
 import { filterHiddenModels, getProviderModels, parseHiddenModels } from "../llm/modelCatalog";
-import { listModelRouteConfigs, MODEL_ROUTE_TASK_TYPES, upsertModelRouteConfig } from "../llm/modelRouter";
+import { listModelRouteConfigs, MODEL_ROUTE_TASK_TYPES, resetRouteTemperaturesToDefault, upsertModelRouteConfig } from "../llm/modelRouter";
 import { llmProviderSchema } from "../llm/providerSchema";
 import { getProviderEnvApiKey, getProviderEnvModel, isBuiltInProvider, PROVIDERS } from "../llm/providers";
 import { authMiddleware } from "../middleware/auth";
@@ -127,6 +127,26 @@ router.post("/model-routes/connectivity", async (req, res, next) => {
       success: true,
       data,
       message: "模型路由连通性检测完成。",
+    } satisfies ApiResponse<typeof data>);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/model-routes/reset-temperatures", async (req, res, next) => {
+  try {
+    const rawTaskTypes = (req.body as { taskTypes?: unknown } | undefined)?.taskTypes;
+    const requestedTaskTypes = Array.isArray(rawTaskTypes)
+      ? rawTaskTypes
+        .filter((item): item is string => typeof item === "string")
+        .map((item) => item.trim())
+        .filter(Boolean)
+      : [];
+    const data = await resetRouteTemperaturesToDefault(requestedTaskTypes);
+    res.status(200).json({
+      success: true,
+      data,
+      message: "各任务温度已恢复默认值。",
     } satisfies ApiResponse<typeof data>);
   } catch (error) {
     next(error);

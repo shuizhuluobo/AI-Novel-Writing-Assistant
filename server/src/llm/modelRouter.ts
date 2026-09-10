@@ -380,3 +380,30 @@ export async function upsertModelRouteConfig(
     },
   });
 }
+
+export async function resetRouteTemperaturesToDefault(
+  taskTypes: readonly string[] = MODEL_ROUTE_TASK_TYPES,
+): Promise<Array<{ taskType: ModelRouteTaskType; temperature: number }>> {
+  const scoped = taskTypes.filter((taskType): taskType is ModelRouteTaskType =>
+    (MODEL_ROUTE_TASK_TYPES as readonly string[]).includes(taskType));
+  const effective = scoped.length > 0 ? scoped : [...MODEL_ROUTE_TASK_TYPES];
+  const results: Array<{ taskType: ModelRouteTaskType; temperature: number }> = [];
+  for (const taskType of effective) {
+    const temperature = (DEFAULT_ROUTES[taskType] ?? DEFAULT_ROUTES.default).temperature;
+    try {
+      const existing = await prisma.modelRouteConfig.findUnique({
+        where: { taskType },
+      });
+      if (existing) {
+        await prisma.modelRouteConfig.update({
+          where: { taskType },
+          data: { temperature },
+        });
+      }
+    } catch {
+      // table may not exist yet; resolve-time defaults still apply
+    }
+    results.push({ taskType, temperature });
+  }
+  return results;
+}

@@ -450,6 +450,14 @@ export async function saveModelRoute(payload: ModelRouteConfig) {
   return data;
 }
 
+export async function resetModelRouteTemperatures(taskTypes?: string[]) {
+  const { data } = await apiClient.post<ApiResponse<Array<{ taskType: string; temperature: number }>>>(
+    "/llm/model-routes/reset-temperatures",
+    taskTypes && taskTypes.length > 0 ? { taskTypes } : {},
+  );
+  return data;
+}
+
 export async function getStructuredFallbackConfig() {
   const { data } = await apiClient.get<ApiResponse<StructuredFallbackSettings>>("/llm/structured-fallback");
   return data;

@@ -8,6 +8,7 @@ import {
   getAPIKeySettings,
   getModelRoutes,
   getStructuredFallbackConfig,
+  resetModelRouteTemperatures,
   saveModelRoute,
   saveStructuredFallbackConfig,
   testModelRouteConnectivity,
@@ -158,6 +159,15 @@ export default function ModelRoutesPage() {
       setActionResult("结构化备用模型保存完成；备用模型影响全部结构化检测，请手动重新检测。");
       await queryClient.invalidateQueries({ queryKey: queryKeys.settings.structuredFallback });
       await queryClient.removeQueries({ queryKey: queryKeys.settings.modelRouteConnectivity });
+    },
+  });
+
+  const resetTemperaturesMutation = useMutation({
+    mutationFn: () => resetModelRouteTemperatures(),
+    onSuccess: async () => {
+      setRouteDrafts({});
+      setActionResult("各任务温度已恢复默认值（如写作 0.8、严格审校 0.1），厂商与模型保持不变。");
+      await queryClient.invalidateQueries({ queryKey: queryKeys.settings.modelRoutes });
     },
   });
 
@@ -421,6 +431,20 @@ export default function ModelRoutesPage() {
               >
                 <CopyCheck className="h-4 w-4" />
                 补齐空白任务
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (window.confirm("把全部任务的温度恢复为各角色默认值？厂商和模型保持不变。")) {
+                    resetTemperaturesMutation.mutate();
+                  }
+                }}
+                disabled={resetTemperaturesMutation.isPending || isSavingRoutes}
+              >
+                <RefreshCw className="h-4 w-4" />
+                {resetTemperaturesMutation.isPending ? "恢复中..." : "恢复默认温度"}
               </Button>
               <Button
                 type="button"
