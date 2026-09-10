@@ -314,6 +314,16 @@ test("summarizeStructuredOutputFailure explains billing for 402 transport errors
   assert.match(summary.summary, /欠费|余额/);
 });
 
+test("summarizeStructuredOutputFailure explains activation for product-not-activated errors", () => {
+  const summary = structuredInvoke.summarizeStructuredOutputFailure({
+    error: new Error("400 The product is not activated, please confirm that you have activated products and try again after activation."),
+    fallbackAvailable: false,
+  });
+
+  assert.equal(summary.category, "transport_error");
+  assert.match(summary.summary, /开通/);
+});
+
 test("invokeStructuredLlmDetailed degrades to prompt JSON before using fallback models", async () => {
   const originalResolveOptions = factory.resolveLLMClientOptions;
   const originalCreateLLM = factory.createLLMFromResolvedOptions;
