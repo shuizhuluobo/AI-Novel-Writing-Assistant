@@ -268,11 +268,16 @@ export default function ModelRoutesPage() {
     setRouteDrafts((prev) => {
       const next = { ...prev };
       targetTaskTypes.forEach((taskType) => {
-        next[taskType] = { ...draft };
+        const current = next[taskType] ?? getRouteDraft(taskType);
+        next[taskType] = {
+          ...current,
+          provider: draft.provider,
+          model: draft.model,
+        };
       });
       return next;
     });
-    setActionResult(`模型设置填入 ${targetTaskTypes.length} 个任务，保存后生效。`);
+    setActionResult(`厂商与模型已填入 ${targetTaskTypes.length} 个任务，各任务温度与其它参数保持不变，保存后生效。`);
   }
 
   function getStructuredFallbackDraft(): StructuredFallbackDraft {
@@ -365,7 +370,7 @@ export default function ModelRoutesPage() {
             快速套用模型
           </CardTitle>
           <CardDescription>
-            先选一套模型，再填入多个任务；统一保存后，后续创作会按新路由执行。
+            先选厂商与模型，再填入多个任务；只套用这两项，各任务的温度与其它参数保持不变，统一保存后生效。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -379,6 +384,7 @@ export default function ModelRoutesPage() {
             modelEmptyText="这个服务商没有可选模型"
             manualModelPlaceholder="也可以手动输入模型名"
             showProtocolFields={false}
+            showTuningFields={false}
           />
 
           <div className="flex flex-wrap items-center justify-between gap-3">

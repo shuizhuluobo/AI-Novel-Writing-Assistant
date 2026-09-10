@@ -25,6 +25,7 @@ interface ModelRouteFieldsProps {
   modelEmptyText: string;
   manualModelPlaceholder: string;
   showProtocolFields?: boolean;
+  showTuningFields?: boolean;
 }
 
 export default function ModelRouteFields({
@@ -37,11 +38,13 @@ export default function ModelRouteFields({
   modelEmptyText,
   manualModelPlaceholder,
   showProtocolFields = true,
+  showTuningFields = true,
 }: ModelRouteFieldsProps) {
   const modelOptions = getModelOptions(providerConfigs, draft.provider, draft.model);
+  const gridCols = showProtocolFields ? "md:grid-cols-6" : showTuningFields ? "md:grid-cols-4" : "md:grid-cols-2";
 
   return (
-    <div className={`grid gap-3 ${showProtocolFields ? "md:grid-cols-6" : "md:grid-cols-4"}`}>
+    <div className={`grid gap-3 ${gridCols}`}>
       <div className="space-y-1">
         <div className="text-xs text-muted-foreground">服务商</div>
         <Select
@@ -84,23 +87,27 @@ export default function ModelRouteFields({
         />
       </div>
 
-      <div className="space-y-1">
-        <div className="text-xs text-muted-foreground">温度</div>
-        <Input
-          value={draft.temperature}
-          placeholder={temperaturePlaceholder}
-          onChange={(event) => onPatch({ temperature: event.target.value })}
-        />
-      </div>
+      {showTuningFields ? (
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground">温度</div>
+          <Input
+            value={draft.temperature}
+            placeholder={temperaturePlaceholder}
+            onChange={(event) => onPatch({ temperature: event.target.value })}
+          />
+        </div>
+      ) : null}
 
-      <div className="space-y-1">
-        <div className="text-xs text-muted-foreground">最大输出长度</div>
-        <Input
-          value={draft.maxTokens}
-          placeholder={maxTokensPlaceholder}
-          onChange={(event) => onPatch({ maxTokens: event.target.value })}
-        />
-      </div>
+      {showTuningFields ? (
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground">最大输出长度</div>
+          <Input
+            value={draft.maxTokens}
+            placeholder={maxTokensPlaceholder}
+            onChange={(event) => onPatch({ maxTokens: event.target.value })}
+          />
+        </div>
+      ) : null}
 
       {showProtocolFields ? (
         <div className="space-y-1">
