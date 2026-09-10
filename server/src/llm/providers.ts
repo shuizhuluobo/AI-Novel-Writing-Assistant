@@ -160,14 +160,14 @@ export const PROVIDERS: Record<BuiltinLLMProvider, ProviderConfig> = {
   bailian: {
     name: "阿里百炼",
     baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    defaultModel: "qwen-plus",
+    defaultModel: "qwen3.8-flash",
     models: [
+      "qwen3.8-flash",
+      "deepseek-v4-flash",
+      "ZHIPU/GLM-5.3-Flash",
       "qwen-plus",
       "qwen-max",
       "qwen-turbo",
-      "qwen3-max",
-      "qwen3-235b-a22b",
-      "qwen3-32b",
     ],
     envKey: "DASHSCOPE_API_KEY",
     envBaseURLKey: "BAILIAN_BASE_URL",

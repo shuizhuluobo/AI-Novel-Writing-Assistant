@@ -7,6 +7,8 @@ export interface LlmTokenUsageSnapshot {
   promptTokens: number;
   completionTokens: number;
   reasoningTokens?: number;
+  cachedTokens?: number;
+  cacheCreationTokens?: number;
   totalTokens: number;
 }
 
@@ -67,11 +69,15 @@ function normalizeSnapshot(input: {
   promptTokens?: unknown;
   completionTokens?: unknown;
   reasoningTokens?: unknown;
+  cachedTokens?: unknown;
+  cacheCreationTokens?: unknown;
   totalTokens?: unknown;
 }): LlmTokenUsageSnapshot | null {
   const promptTokens = toPositiveInteger(input.promptTokens) ?? 0;
   const completionTokens = toPositiveInteger(input.completionTokens) ?? 0;
   const reasoningTokens = toPositiveInteger(input.reasoningTokens);
+  const cachedTokens = toPositiveInteger(input.cachedTokens);
+  const cacheCreationTokens = toPositiveInteger(input.cacheCreationTokens);
   const totalTokens = toPositiveInteger(input.totalTokens)
     ?? Math.max(promptTokens + completionTokens, 0);
   if (promptTokens <= 0 && completionTokens <= 0 && totalTokens <= 0) {
@@ -81,6 +87,8 @@ function normalizeSnapshot(input: {
     promptTokens,
     completionTokens,
     ...(reasoningTokens !== null ? { reasoningTokens } : {}),
+    ...(cachedTokens !== null ? { cachedTokens } : {}),
+    ...(cacheCreationTokens !== null ? { cacheCreationTokens } : {}),
     totalTokens: Math.max(totalTokens, promptTokens + completionTokens),
   };
 }
@@ -100,16 +108,47 @@ function extractUsageObject(value: unknown): LlmTokenUsageSnapshot | null {
     output_tokens?: unknown;
     inputTokens?: unknown;
     outputTokens?: unknown;
+    cached_tokens?: unknown;
+    cachedTokens?: unknown;
+    cache_read_input_tokens?: unknown;
+    cacheReadInputTokens?: unknown;
+    cache_creation_input_tokens?: unknown;
+    cacheCreationInputTokens?: unknown;
     completion_tokens_details?: { reasoning_tokens?: unknown } | null;
     output_token_details?: { reasoning?: unknown } | null;
     outputTokenDetails?: { reasoning?: unknown } | null;
+    prompt_tokens_details?: {
+      cached_tokens?: unknown;
+      cache_creation_input_tokens?: unknown;
+    } | null;
+    promptTokensDetails?: {
+      cachedTokens?: unknown;
+      cacheCreationInputTokens?: unknown;
+    } | null;
   };
+  const details = usage.prompt_tokens_details ?? usage.promptTokensDetails;
+  const detailsRecord = details && typeof details === "object" ? details as {
+    cached_tokens?: unknown;
+    cachedTokens?: unknown;
+    cache_creation_input_tokens?: unknown;
+    cacheCreationInputTokens?: unknown;
+  } : null;
   return normalizeSnapshot({
     promptTokens: usage.prompt_tokens ?? usage.promptTokens ?? usage.input_tokens ?? usage.inputTokens,
     completionTokens: usage.completion_tokens ?? usage.completionTokens ?? usage.output_tokens ?? usage.outputTokens,
     reasoningTokens: usage.completion_tokens_details?.reasoning_tokens
       ?? usage.output_token_details?.reasoning
       ?? usage.outputTokenDetails?.reasoning,
+    cachedTokens: detailsRecord?.cached_tokens
+      ?? detailsRecord?.cachedTokens
+      ?? usage.cached_tokens
+      ?? usage.cachedTokens
+      ?? usage.cache_read_input_tokens
+      ?? usage.cacheReadInputTokens,
+    cacheCreationTokens: detailsRecord?.cache_creation_input_tokens
+      ?? detailsRecord?.cacheCreationInputTokens
+      ?? usage.cache_creation_input_tokens
+      ?? usage.cacheCreationInputTokens,
     totalTokens: usage.total_tokens ?? usage.totalTokens,
   });
 }
@@ -129,6 +168,12 @@ export function extractLlmTokenUsage(output: unknown): LlmTokenUsageSnapshot | n
         completionTokens: acc.completionTokens + next.completionTokens,
         ...((acc.reasoningTokens !== undefined || next.reasoningTokens !== undefined)
           ? { reasoningTokens: (acc.reasoningTokens ?? 0) + (next.reasoningTokens ?? 0) }
+          : {}),
+        ...((acc.cachedTokens !== undefined || next.cachedTokens !== undefined)
+          ? { cachedTokens: (acc.cachedTokens ?? 0) + (next.cachedTokens ?? 0) }
+          : {}),
+        ...((acc.cacheCreationTokens !== undefined || next.cacheCreationTokens !== undefined)
+          ? { cacheCreationTokens: (acc.cacheCreationTokens ?? 0) + (next.cacheCreationTokens ?? 0) }
           : {}),
         totalTokens: acc.totalTokens + next.totalTokens,
       };
@@ -174,6 +219,12 @@ export function mergeStreamTokenUsage(
     completionTokens: Math.max(current.completionTokens, next.completionTokens),
     ...((current.reasoningTokens !== undefined || next.reasoningTokens !== undefined)
       ? { reasoningTokens: Math.max(current.reasoningTokens ?? 0, next.reasoningTokens ?? 0) }
+      : {}),
+    ...((current.cachedTokens !== undefined || next.cachedTokens !== undefined)
+      ? { cachedTokens: Math.max(current.cachedTokens ?? 0, next.cachedTokens ?? 0) }
+      : {}),
+    ...((current.cacheCreationTokens !== undefined || next.cacheCreationTokens !== undefined)
+      ? { cacheCreationTokens: Math.max(current.cacheCreationTokens ?? 0, next.cacheCreationTokens ?? 0) }
       : {}),
     totalTokens: Math.max(current.totalTokens, next.totalTokens),
   };
@@ -235,7 +286,7 @@ function buildPromptNodeKey(meta: LlmUsageTrackingMeta | undefined): string | nu
   return stage || null;
 }
 
-function buildDirectorUsageMetadata(input: TrackedUsageRecordInput | undefined): string | null {
+function buildDirectorUsageMetadata(input: TrackedUsageRecordInput | undefined, usage?: LlmTokenUsageSnapshot | null): string | null {
   const promptMeta = input?.meta?.promptMeta;
   const metadata = {
     ...(input?.metadata ?? {}),
@@ -248,6 +299,8 @@ function buildDirectorUsageMetadata(input: TrackedUsageRecordInput | undefined):
     itemKey: promptMeta?.itemKey ?? null,
     scope: promptMeta?.scope ?? null,
     entrypoint: promptMeta?.entrypoint ?? null,
+    ...(usage?.cachedTokens !== undefined ? { cachedTokens: usage.cachedTokens } : {}),
+    ...(usage?.cacheCreationTokens !== undefined ? { cacheCreationTokens: usage.cacheCreationTokens } : {}),
   };
   const meaningful = Object.values(metadata).some((value) => value !== null && value !== undefined && value !== "");
   return meaningful ? JSON.stringify(metadata) : null;
@@ -283,7 +336,7 @@ async function recordDirectorLlmUsage(input: {
       promptTokens: input.usage.promptTokens,
       completionTokens: input.usage.completionTokens,
       totalTokens: input.usage.totalTokens,
-      metadataJson: buildDirectorUsageMetadata(input.record),
+      metadataJson: buildDirectorUsageMetadata(input.record, input.usage),
       recordedAt: input.recordedAt,
     },
   }).catch(() => undefined);

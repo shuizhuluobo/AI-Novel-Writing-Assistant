@@ -5,6 +5,8 @@ import { isBuiltInProvider } from "./providers";
 const THINK_OPEN_TAG = "<think>";
 const THINK_CLOSE_TAG = "</think>";
 const DEEPSEEK_HOST_PATTERN = /(?:^|:\/\/)(?:api\.)?deepseek\.com(?:\/|$)/i;
+const DASHSCOPE_HOST_PATTERN = /(?:^|:\/\/|\.)dashscope\.aliyuncs\.com(?:\/|$)/i;
+const MAAS_HOST_PATTERN = /(?:^|:\/\/|\.)maas\.aliyuncs\.com(?:\/|$)/i;
 const MINIMAX_HOST_PATTERN = /(?:^|:\/\/)(?:api\.)?minimax(?:i)?\.(?:io|com)(?:\/|$)/i;
 const MINIMAX_MODEL_PATTERN = /^minimax-m2(?:[.-]|$)/i;
 
@@ -113,7 +115,18 @@ export function isDeepSeekThinkingModeProvider(
     return true;
   }
   const normalizedBaseURL = normalizeOptionalText(baseURL);
-  return Boolean(normalizedBaseURL && DEEPSEEK_HOST_PATTERN.test(normalizedBaseURL));
+  if (!normalizedBaseURL) {
+    return false;
+  }
+  if (DEEPSEEK_HOST_PATTERN.test(normalizedBaseURL)) {
+    return true;
+  }
+  // DashScope-hosted deepseek-v4 (e.g. bailian provider, incl. workspace subdomains) exposes the same thinking toggle.
+  if ((provider === "bailian" || provider === "qwen")
+    && (DASHSCOPE_HOST_PATTERN.test(normalizedBaseURL) || MAAS_HOST_PATTERN.test(normalizedBaseURL))) {
+    return true;
+  }
+  return false;
 }
 
 export function resolveProviderReasoningBehavior(input: {

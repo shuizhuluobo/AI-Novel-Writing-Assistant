@@ -161,6 +161,8 @@
 - 模型目录缓存落盘保存，后端重启后列表仍在，不用反复刷新。
 - 内置厂商（SiliconFlow、OpenRouter 等）同样显示远端完整目录，不再只剩静态几个旧模型；刷新一次后重启也不丢失。
 - 新增阿里百炼内置厂商，Qwen 系列走原生结构化输出，思考模型在结构化任务自动关闭思考。
+- 百炼主力三模型就绪：qwen3.8-flash、deepseek-v4-flash、ZHIPU/GLM-5.3-Flash（以接口实测为准）；workspace 子域同样走原生结构化，deepseek-v4 结构化自动关思考。
+- 用量统计开始记录缓存命中 Token，百炼隐式缓存（8 折）生效后可在运行记录中看到命中量。
 - 单个任务路由保存后只复测该任务；Ollama 模型列表同时尝试两个接口取数，减少等待。
 
 完整历史更新见 [docs/releases/release-notes.md](./docs/releases/release-notes.md)。

@@ -47,6 +47,73 @@ test("extractLlmTokenUsage falls back to response_metadata usage payload", () =>
   });
 });
 
+test("extractLlmTokenUsage reads DashScope cached tokens from prompt details", () => {
+  const usage = extractLlmTokenUsage({
+    usage_metadata: {
+      prompt_tokens: 5000,
+      completion_tokens: 300,
+      prompt_tokens_details: {
+        cached_tokens: 4200,
+        cache_creation_input_tokens: 800,
+      },
+      total_tokens: 5300,
+    },
+  });
+
+  assert.deepEqual(usage, {
+    promptTokens: 5000,
+    completionTokens: 300,
+    cachedTokens: 4200,
+    cacheCreationTokens: 800,
+    totalTokens: 5300,
+  });
+});
+
+test("extractLlmTokenUsage reads anthropic cache fields", () => {
+  const usage = extractLlmTokenUsage({
+    response_metadata: {
+      usage: {
+        input_tokens: 5000,
+        output_tokens: 300,
+        cache_read_input_tokens: 4000,
+        cache_creation_input_tokens: 1000,
+      },
+    },
+  });
+
+  assert.deepEqual(usage, {
+    promptTokens: 5000,
+    completionTokens: 300,
+    cachedTokens: 4000,
+    cacheCreationTokens: 1000,
+    totalTokens: 5300,
+  });
+});
+
+test("mergeStreamTokenUsage keeps cached token peaks", () => {
+  const merged = mergeStreamTokenUsage(
+    {
+      promptTokens: 5000,
+      completionTokens: 8,
+      cachedTokens: 1000,
+      totalTokens: 5008,
+    },
+    {
+      promptTokens: 5000,
+      completionTokens: 300,
+      cachedTokens: 4200,
+      totalTokens: 5300,
+    },
+  );
+
+  assert.deepEqual(merged, {
+    promptTokens: 5000,
+    completionTokens: 300,
+    cachedTokens: 4200,
+    totalTokens: 5300,
+  });
+});
+
 test("mergeStreamTokenUsage keeps the final stream totals instead of double counting chunks", () => {
   const merged = mergeStreamTokenUsage(
     {

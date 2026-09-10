@@ -36,6 +36,7 @@ export interface StructuredOutputDiagnostics {
 
 const QWEN_FAMILY_PATTERN = /(?:^|[/:_-])qwen(?:\d+(?:\.\d+)?)?/i;
 const DASHSCOPE_HOST_PATTERN = /(?:^|\.)dashscope\.aliyuncs\.com$/i;
+const MAAS_HOST_PATTERN = /(?:^|\.)maas\.aliyuncs\.com$/i;
 const MODELSCOPE_HOST_PATTERN = /(?:^|\.)modelscope\.cn$/i;
 const OPENAI_HOST_PATTERN = /(?:^|\.)api\.openai\.com$/i;
 const GEMINI_HOST_PATTERN = /(?:^|\.)generativelanguage\.googleapis\.com$/i;
@@ -160,8 +161,9 @@ export function resolveStructuredOutputProfile(input: {
   const qwenMixedThinkingModel = isQwenMixedThinkingModel(model);
   const qwenThinkingOnlyModel = isQwenThinkingOnlyModel(model);
   const qwenNativeStructuredModel = supportsDashScopeQwenNativeStructuredOutput(model);
-  const isDashScopeQwen = usesOfficialEndpoint("qwen", DASHSCOPE_HOST_PATTERN)
-    || usesOfficialEndpoint("bailian", DASHSCOPE_HOST_PATTERN);
+  // 百炼官方地址包括直连域名与各地域 workspace 子域（如 ws-xxx.cn-beijing.maas.aliyuncs.com）。
+  const isDashScopeQwen = (input.provider === "qwen" || input.provider === "bailian")
+    && (DASHSCOPE_HOST_PATTERN.test(host) || MAAS_HOST_PATTERN.test(host) || !host);
   const isModelScopeQwen = MODELSCOPE_HOST_PATTERN.test(host) || provider.includes("modelscope");
 
   if (input.requestProtocol === "anthropic") {

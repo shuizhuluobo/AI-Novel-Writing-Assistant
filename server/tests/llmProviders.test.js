@@ -12,6 +12,9 @@ const {
   resolveLLMClientOptions,
   setProviderSecretCache,
 } = require("../dist/llm/factory.js");
+const {
+  isDeepSeekThinkingModeProvider,
+} = require("../dist/llm/reasoning.js");
 
 test("custom provider auth mode replaces the SDK bearer header when requested", () => {
   assert.equal(buildOpenAICompatibleDefaultHeaders("bearer", "secret"), undefined);
@@ -100,6 +103,18 @@ test("bailian shares the dashscope qwen structured profile", () => {
   assert.equal(profile.nativeJsonSchema, false);
 });
 
+test("bailian workspace subdomains share the dashscope qwen profile", () => {
+  const profile = resolveStructuredOutputProfile({
+    provider: "bailian",
+    model: "qwen3.8-flash",
+    baseURL: "https://ws-3l8iwoplbkgl80ph.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+    executionMode: "structured",
+  });
+  assert.equal(profile.family, "dashscope_qwen");
+  assert.equal(profile.preferredStructuredStrategy, "json_object");
+  assert.equal(profile.requiresNonThinkingForStructured, true);
+});
+
 test("bailian disables thinking for structured qwen3 calls", () => {
   const profile = resolveStructuredOutputProfile({
     provider: "bailian",
@@ -109,6 +124,36 @@ test("bailian disables thinking for structured qwen3 calls", () => {
   });
   assert.equal(profile.requiresNonThinkingForStructured, true);
   assert.equal(profile.supportsReasoningToggle, true);
+});
+
+test("bailian dashscope deepseek-v4 exposes the thinking toggle", () => {
+  assert.equal(
+    isDeepSeekThinkingModeProvider(
+      "bailian",
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "deepseek-v4-flash",
+    ),
+    true,
+  );
+  assert.equal(
+    isDeepSeekThinkingModeProvider(
+      "bailian",
+      "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "qwen3.8-flash",
+    ),
+    false,
+  );
+});
+
+test("bailian ZHIPU GLM uses prompt_json without thinking toggle", () => {
+  const profile = resolveStructuredOutputProfile({
+    provider: "bailian",
+    model: "ZHIPU/GLM-5.3-Flash",
+    baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    executionMode: "structured",
+  });
+  assert.equal(profile.preferredStructuredStrategy, "prompt_json");
+  assert.equal(profile.requiresNonThinkingForStructured, false);
 });
 
 test("bailian falls back to prompt_json for non-qwen models", () => {
